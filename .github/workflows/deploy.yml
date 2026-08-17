@@ -1,4 +1,5 @@
 name: Deploy Cric Masters to GitHub Pages
+# Triggering redeployment after setting Pages source to Actions
 
 on:
   push:
