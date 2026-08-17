@@ -1,0 +1,212 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-stadium-950: #06110a;
+  --color-stadium-900: #0b1d13;
+  --color-stadium-800: #132e1e;
+  --color-stadium-700: #1c402b;
+  --color-stadium-600: #26553a;
+  --color-stadium-500: #34704d;
+  --color-stadium-400: #669e7d;
+  --color-stadium-300: #99c2aa;
+  --color-stadium-200: #cce6d6;
+  --color-stadium-100: #eef7f2;
+
+  --color-turf-950: #042f14;
+  --color-turf-900: #0a4720;
+  --color-turf-700: #15803d;
+  --color-turf-600: #16a34a;
+  --color-turf-500: #22c55e;
+  --color-turf-400: #4ade80;
+  --color-turf-300: #86efac;
+
+  --color-gold-600: #d97706;
+  --color-gold-500: #eab308;
+  --color-gold-400: #facc15;
+  --color-gold-300: #fde047;
+}
+
+/* ==========================================================================
+   UI / UX DESIGN SYSTEM — PERFECT HIGH-CONTRAST LIGHT & DARK MODE
+   ========================================================================== */
+
+/* DARK MODE (DEFAULT) */
+html.dark,
+body.dark {
+  background-color: #06110a;
+  color: #f8fafc;
+}
+
+/* LIGHT MODE OVERRIDES — CRYSTAL CLEAR VISIBILITY */
+html.light,
+body.light {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html.light header {
+  background-color: #ffffff !important;
+  border-bottom-color: #cbd5e1 !important;
+}
+
+html.light nav {
+  background-color: #ffffff !important;
+  border-top-color: #cbd5e1 !important;
+}
+
+/* CARDS IN LIGHT MODE */
+html.light .bg-stadium-950 {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.light .bg-stadium-900 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05) !important;
+}
+
+html.light .bg-stadium-800 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.light .bg-stadium-700 {
+  background-color: #e2e8f0 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* TEXT COLOR OVERRIDES IN LIGHT MODE FOR 100% VISIBILITY */
+html.light .text-white {
+  color: #0f172a !important;
+}
+
+html.light .text-stadium-100,
+html.light .text-stadium-200,
+html.light .text-stadium-300 {
+  color: #1e293b !important;
+}
+
+html.light .text-stadium-400,
+html.light .text-stadium-500 {
+  color: #475569 !important;
+}
+
+html.light .text-stadium-950,
+html.light .text-stadium-900,
+html.light .text-stadium-800 {
+  color: #0f172a !important;
+}
+
+html.light .text-turf-400,
+html.light .text-turf-500 {
+  color: #15803d !important;
+  font-weight: 800 !important;
+}
+
+html.light .text-gold-400,
+html.light .text-gold-500 {
+  color: #b45309 !important;
+  font-weight: 800 !important;
+}
+
+/* BORDERS IN LIGHT MODE */
+html.light .border-stadium-800,
+html.light .border-stadium-700,
+html.light .border-stadium-600 {
+  border-color: #cbd5e1 !important;
+}
+
+/* SELECTED / UNSELECTED PLAYER CARDS IN LIGHT MODE */
+html.light .bg-turf-950\/80,
+html.light .bg-turf-500\/10,
+html.light .bg-turf-500\/20 {
+  background-color: #dcfce7 !important;
+  border-color: #16a34a !important;
+  color: #14532d !important;
+}
+
+html.light .bg-stadium-900\/90,
+html.light .bg-stadium-900\/80,
+html.light .bg-stadium-900\/60 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* HERO BANNER & COIN TOSS CARD IN LIGHT MODE */
+html.light .from-stadium-800,
+html.light .to-stadium-950,
+html.light .via-stadium-900 {
+  background: #ffffff !important;
+  border-color: #16a34a !important;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* BUTTONS IN LIGHT MODE */
+html.light button.bg-turf-500,
+html.light .bg-turf-500 {
+  background-color: #16a34a !important;
+  color: #ffffff !important;
+}
+
+html.light button.bg-stadium-800 {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.light input,
+html.light select,
+html.light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* ANIMATIONS */
+@keyframes spinFast {
+  0% {
+    transform: rotateY(0deg) scale(1.1);
+  }
+  100% {
+    transform: rotateY(1800deg) scale(1.1);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-spin-fast {
+  animation: spinFast 1.2s cubic-bezier(0.15, 0.85, 0.35, 1) forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
