@@ -40,6 +40,16 @@ export function generateTeams(
     const candidateA = shuffled.slice(0, teamASize);
     const candidateB = shuffled.slice(teamASize);
 
+    // Keep Krishna sir and Vasu in different/opposite teams
+    const hasKrishnaA = candidateA.some(isKrishna);
+    const hasVasuA = candidateA.some(isVasu);
+    const hasKrishnaB = candidateB.some(isKrishna);
+    const hasVasuB = candidateB.some(isVasu);
+
+    if ((hasKrishnaA && hasVasuA) || (hasKrishnaB && hasVasuB)) {
+      continue;
+    }
+
     const summaryA = calculateTeamRoleSummary(candidateA);
     const summaryB = calculateTeamRoleSummary(candidateB);
 
@@ -56,10 +66,25 @@ export function generateTeams(
   }
 
   if (!bestSplit) {
-    const shuffled = shuffleArray([...pool]);
+    let fallbackA: Player[] = [];
+    let fallbackB: Player[] = [];
+    let attempts = 0;
+    while (attempts < 100) {
+      const shuffled = shuffleArray([...pool]);
+      fallbackA = shuffled.slice(0, teamASize);
+      fallbackB = shuffled.slice(teamASize);
+      const hasKrishnaA = fallbackA.some(isKrishna);
+      const hasVasuA = fallbackA.some(isVasu);
+      const hasKrishnaB = fallbackB.some(isKrishna);
+      const hasVasuB = fallbackB.some(isVasu);
+      if (!((hasKrishnaA && hasVasuA) || (hasKrishnaB && hasVasuB))) {
+        break;
+      }
+      attempts++;
+    }
     bestSplit = {
-      teamA: shuffled.slice(0, teamASize),
-      teamB: shuffled.slice(teamASize),
+      teamA: fallbackA,
+      teamB: fallbackB,
     };
   }
 
@@ -121,4 +146,14 @@ function shuffleArray<T>(array: T[]): T[] {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
+}
+
+function isKrishna(player: Player): boolean {
+  const name = player.name.toLowerCase().trim();
+  return name === 'krishna' || name === 'krishna sir' || player.id === 'p-krishna';
+}
+
+function isVasu(player: Player): boolean {
+  const name = player.name.toLowerCase().trim();
+  return name === 'vasu' || player.id === 'p-vasu';
 }
