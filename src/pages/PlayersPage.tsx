@@ -203,7 +203,7 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
                     : 'bg-stadium-800 text-stadium-400 border border-stadium-700'
                 }`}
               >
-                {isRegularInput ? 'REGULAR' : 'OCCASIONAL'}
+                {isRegularInput ? 'REGULAR' : 'OTHER'}
               </button>
             </div>
           </div>
@@ -289,7 +289,7 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
       <div className="space-y-3 pt-2">
         <div className="flex items-center space-x-2 text-xs font-extrabold text-stadium-400 uppercase tracking-wider px-1">
           <Users className="w-3.5 h-3.5" />
-          <span>Occasional / Other Players ({occasionalPlayers.length})</span>
+          <span>Other Players ({occasionalPlayers.length})</span>
         </div>
 
         <div className="space-y-2">

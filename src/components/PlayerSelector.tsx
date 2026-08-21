@@ -124,11 +124,11 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
         </div>
       </div>
 
-      {/* OCCASIONAL FACULTY PLAYERS */}
+      {/* OTHER FACULTY PLAYERS */}
       {occasionals.length > 0 && (
         <div className="space-y-2 pt-2">
           <div className="flex items-center justify-between text-xs font-black text-stadium-300 uppercase tracking-wider px-1">
-            <span>Occasional Players ({occasionals.length})</span>
+            <span>Other Players ({occasionals.length})</span>
             <span className="text-[10px] text-gold-400 font-bold">
               {occasionals.filter((p) => isSelected(p.id)).length} selected
             </span>

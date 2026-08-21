@@ -91,7 +91,7 @@ export const INITIAL_PLAYERS: Player[] = [
     createdAt: new Date().toISOString(),
   },
 
-  // --- Occasional Players ---
+  // --- Other Players ---
   {
     id: 'p-upendra',
     name: 'Upendra Sir',
