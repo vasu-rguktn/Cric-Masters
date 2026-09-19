@@ -29,6 +29,14 @@ export interface TeamScore {
 }
 
 export interface MatchScorecard {
+  totalOvers?: number;
+  currentInnings?: 1 | 2;
+  battingTeamId?: 'teamA' | 'teamB';
+  currentStrikerId?: string;
+  currentNonStrikerId?: string;
+  currentBowlerId?: string;
+  isDecisionPending?: boolean;
+  undoStack?: string[]; // JSON stringified MatchScorecard array
   teamAScore: TeamScore;
   teamBScore: TeamScore;
   playerStats: Record<string, PlayerMatchStat>;

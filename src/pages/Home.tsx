@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import type { Player } from '../types/player';
 import type { MatchSession } from '../types/match';
 import { TossCoin } from '../components/TossCoin';
-import { Users, Play, Calendar, ArrowRight, ShieldCheck, Clock } from 'lucide-react';
+import { Users, Play, Calendar, ArrowRight, ShieldCheck, Clock, Star, Target } from 'lucide-react';
 import { formatDateDisplay } from '../utils/dates';
+import { getMatchHistory } from '../services/storageService';
 
 interface HomeProps {
   players: Player[];
@@ -21,10 +22,44 @@ export const Home: React.FC<HomeProps> = ({
   onMakeTeamsClick,
 }) => {
   const [now, setNow] = useState<Date>(new Date());
+  const [lastMatchStats, setLastMatchStats] = useState<{
+    batsman: { name: string; runs: number; balls: number } | null;
+    bowler: { name: string; wickets: number; runs: number } | null;
+  } | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const history = getMatchHistory();
+    const lastValidMatch = history.reverse().find(m => m.scorecard && m.scorecard.playerStats && Object.keys(m.scorecard.playerStats).length > 0);
+    
+    if (lastValidMatch && lastValidMatch.scorecard) {
+      let bestBat = null;
+      let bestBowl = null;
+      
+      const stats = Object.values(lastValidMatch.scorecard.playerStats);
+      if (stats.length > 0) {
+        const topBatsmen = [...stats].sort((a, b) => b.runsScored - a.runsScored);
+        if (topBatsmen[0].runsScored > 0) {
+          bestBat = { name: topBatsmen[0].playerName, runs: topBatsmen[0].runsScored, balls: topBatsmen[0].ballsFaced };
+        }
+        
+        const topBowlers = [...stats].sort((a, b) => {
+          if (b.wicketsTaken !== a.wicketsTaken) return b.wicketsTaken - a.wicketsTaken;
+          return a.runsConceded - b.runsConceded;
+        });
+        if (topBowlers[0].wicketsTaken > 0 || topBowlers[0].oversBowled > 0) {
+          bestBowl = { name: topBowlers[0].playerName, wickets: topBowlers[0].wicketsTaken, runs: topBowlers[0].runsConceded };
+        }
+      }
+      
+      if (bestBat || bestBowl) {
+        setLastMatchStats({ batsman: bestBat, bowler: bestBowl });
+      }
+    }
   }, []);
 
   const formattedDate = now.toLocaleDateString('en-US', {
@@ -153,6 +188,33 @@ export const Home: React.FC<HomeProps> = ({
 
           <div className="text-[11px] text-center text-stadium-300 font-bold">
             Tap to view teams, swap captains, lock or share match details →
+          </div>
+        </div>
+      )}
+
+      {/* Yesterday's Top Performers Widget */}
+      {lastMatchStats && (
+        <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-4 shadow-lg space-y-3">
+          <div className="text-xs font-black text-stadium-300 uppercase tracking-wider text-center">
+            Previous Match Star Players
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {lastMatchStats.batsman && (
+              <div className="bg-stadium-950 p-3 rounded-2xl border border-turf-500/20 text-center flex flex-col items-center justify-center">
+                <Star className="w-5 h-5 text-gold-400 mb-1" />
+                <div className="text-xs font-bold text-white truncate w-full">{lastMatchStats.batsman.name}</div>
+                <div className="text-xl font-black text-turf-400">{lastMatchStats.batsman.runs}</div>
+                <div className="text-[10px] text-stadium-400">runs ({lastMatchStats.batsman.balls} balls)</div>
+              </div>
+            )}
+            {lastMatchStats.bowler && (
+              <div className="bg-stadium-950 p-3 rounded-2xl border border-red-500/20 text-center flex flex-col items-center justify-center">
+                <Target className="w-5 h-5 text-red-400 mb-1" />
+                <div className="text-xs font-bold text-white truncate w-full">{lastMatchStats.bowler.name}</div>
+                <div className="text-xl font-black text-red-400">{lastMatchStats.bowler.wickets}</div>
+                <div className="text-[10px] text-stadium-400">wkts for {lastMatchStats.bowler.runs}</div>
+              </div>
+            )}
           </div>
         </div>
       )}

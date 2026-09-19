@@ -8,6 +8,7 @@ import { Home } from './pages/Home';
 import { TodayMatch } from './pages/TodayMatch';
 import { PlayersPage } from './pages/PlayersPage';
 import { HistoryPage } from './pages/HistoryPage';
+import { ScoreboardPage } from './pages/ScoreboardPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { getTodayIsoDate } from './utils/dates';
 
@@ -105,10 +106,21 @@ export function App() {
 
         {activeTab === 'history' && <HistoryPage />}
 
+        {activeTab === 'score' && (
+          <ScoreboardPage
+            currentMatch={currentMatch}
+            setCurrentMatch={setCurrentMatch}
+          />
+        )}
+
         {activeTab === 'settings' && (
           <SettingsPage theme={theme} onToggleTheme={toggleTheme} />
         )}
       </main>
+
+      <footer className="pb-24 pt-8 text-center text-stadium-500/70 text-[10px] font-mono tracking-widest uppercase">
+        Created by author - vasuneninthe
+      </footer>
     </div>
   );
 }

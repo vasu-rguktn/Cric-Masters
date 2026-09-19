@@ -31,6 +31,29 @@ export function generateTeams(
     teamASize = Math.floor(total / 2);
   }
 
+  let wereTogetherLastMatch = false;
+  if (history.length > 0) {
+    const latestMatch = history.reduce((latest, current) => 
+      new Date(current.date) > new Date(latest.date) ? current : latest
+    , history[0]);
+
+    if (latestMatch && latestMatch.teamA && latestMatch.teamB) {
+      const teamAHasRK = latestMatch.teamA.players.some(isRK);
+      const teamAHasLK = latestMatch.teamA.players.some(isLK);
+      const teamAHasVasu = latestMatch.teamA.players.some(isVasu);
+      
+      const teamBHasRK = latestMatch.teamB.players.some(isRK);
+      const teamBHasLK = latestMatch.teamB.players.some(isLK);
+      const teamBHasVasu = latestMatch.teamB.players.some(isVasu);
+
+      if ((teamAHasRK && teamAHasLK && teamAHasVasu) || (teamBHasRK && teamBHasLK && teamBHasVasu)) {
+        wereTogetherLastMatch = true;
+      }
+    }
+  }
+
+  const shouldForceTogether = !wereTogetherLastMatch && Math.random() < 0.6;
+
   const SAMPLE_COUNT = Math.min(600, Math.pow(2, pool.length));
   let bestScore = -Infinity;
   let bestSplit: { teamA: Player[]; teamB: Player[] } | null = null;
@@ -48,6 +71,25 @@ export function generateTeams(
 
     if ((hasKrishnaA && hasVasuA) || (hasKrishnaB && hasVasuB)) {
       continue;
+    }
+
+    const hasRKA = candidateA.some(isRK);
+    const hasLKA = candidateA.some(isLK);
+    const hasRKB = candidateB.some(isRK);
+    const hasLKB = candidateB.some(isLK);
+
+    const togetherInA = hasRKA && hasLKA && hasVasuA;
+    const togetherInB = hasRKB && hasLKB && hasVasuB;
+    const areTogether = togetherInA || togetherInB;
+    const areAllPresent = (hasRKA || hasRKB) && (hasLKA || hasLKB) && (hasVasuA || hasVasuB);
+
+    if (areAllPresent) {
+      if (shouldForceTogether && !areTogether) {
+        continue;
+      }
+      if (!shouldForceTogether && areTogether) {
+        continue;
+      }
     }
 
     const summaryA = calculateTeamRoleSummary(candidateA);
@@ -77,7 +119,24 @@ export function generateTeams(
       const hasVasuA = fallbackA.some(isVasu);
       const hasKrishnaB = fallbackB.some(isKrishna);
       const hasVasuB = fallbackB.some(isVasu);
-      if (!((hasKrishnaA && hasVasuA) || (hasKrishnaB && hasVasuB))) {
+      
+      const hasRKA = fallbackA.some(isRK);
+      const hasLKA = fallbackA.some(isLK);
+      const hasRKB = fallbackB.some(isRK);
+      const hasLKB = fallbackB.some(isLK);
+
+      const togetherInA = hasRKA && hasLKA && hasVasuA;
+      const togetherInB = hasRKB && hasLKB && hasVasuB;
+      const areTogether = togetherInA || togetherInB;
+      const areAllPresent = (hasRKA || hasRKB) && (hasLKA || hasLKB) && (hasVasuA || hasVasuB);
+
+      let rkLkVasuOk = true;
+      if (areAllPresent) {
+        if (shouldForceTogether && !areTogether) rkLkVasuOk = false;
+        if (!shouldForceTogether && areTogether) rkLkVasuOk = false;
+      }
+
+      if (!((hasKrishnaA && hasVasuA) || (hasKrishnaB && hasVasuB)) && rkLkVasuOk) {
         break;
       }
       attempts++;
@@ -156,4 +215,14 @@ function isKrishna(player: Player): boolean {
 function isVasu(player: Player): boolean {
   const name = player.name.toLowerCase().trim();
   return name === 'vasu' || player.id === 'p-vasu';
+}
+
+function isRK(player: Player): boolean {
+  const name = player.name.toLowerCase().trim();
+  return name === 'rk' || name === 'rk sir' || player.id === 'p-rk';
+}
+
+function isLK(player: Player): boolean {
+  const name = player.name.toLowerCase().trim();
+  return name === 'lk' || name === 'lk sir' || player.id === 'p-lk';
 }

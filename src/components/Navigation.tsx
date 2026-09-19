@@ -1,7 +1,7 @@
 import React from 'react';
 import { Home, Calendar, Users, History, Settings, Sun, Moon } from 'lucide-react';
 
-export type NavTab = 'home' | 'today' | 'players' | 'history' | 'settings';
+export type NavTab = 'home' | 'today' | 'players' | 'history' | 'score' | 'settings';
 
 interface NavigationProps {
   activeTab: NavTab;
@@ -117,6 +117,19 @@ export const Navigation: React.FC<NavigationProps> = ({
           >
             <History className="w-5 h-5" />
             <span className="text-[10px] mt-1 font-bold">History</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('score')}
+            className={`flex flex-col items-center py-2 px-3 rounded-xl transition-all ${
+              activeTab === 'score'
+                ? 'text-turf-400 font-black bg-turf-500/10 scale-105'
+                : 'text-stadium-400 hover:text-stadium-200'
+            }`}
+          >
+            {/* Using a generic icon for Scoreboard. I'll use a lucide icon like Activity or CheckSquare. Wait, let's use a generic one or add an import. Let's add Activity to imports. */}
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span className="text-[10px] mt-1 font-bold">Score</span>
           </button>
 
           <button
