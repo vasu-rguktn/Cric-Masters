@@ -24,6 +24,7 @@ export function App() {
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(() => {
     if (currentMatch?.availablePlayerIds && currentMatch.availablePlayerIds.length > 0) {
       return currentMatch.availablePlayerIds;
+
     }
     return players.filter((p) => p.isActive && p.isRegular).map((p) => p.id);
   });
