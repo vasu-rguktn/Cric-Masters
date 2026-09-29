@@ -26,9 +26,9 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
   const opponentScoreKey = battingTeamId === 'teamA' ? 'teamBScore' : 'teamAScore';
 
   const setTotalOvers = (overs: number) => {
-    const updated = {
+    const updated: MatchSession = {
       ...currentMatch,
-      scorecard: { ...scorecard, totalOvers: overs, currentInnings: 1, battingTeamId: 'teamA' },
+      scorecard: { ...scorecard, totalOvers: overs, currentInnings: 1 as const, battingTeamId: 'teamA' },
       updatedAt: new Date().toISOString(),
     };
     commitMatchChange(updated);

@@ -4,7 +4,7 @@ import { UmpireControls } from '../components/UmpireControls';
 import { getTodayMatchesByDate, saveCurrentMatch } from '../services/storageService';
 import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates } from '../services/supabaseService';
 import { getTodayIsoDate, formatDateDisplay } from '../utils/dates';
-import { Radio, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 interface ScoreboardPageProps {
   currentMatch: MatchSession | null;

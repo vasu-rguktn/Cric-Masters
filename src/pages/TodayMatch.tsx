@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { Player } from '../types/player';
 import type { MatchSession, TossOutcome, PlayerMatchStat, TeamScore } from '../types/match';
 import { PlayerSelector } from '../components/PlayerSelector';
@@ -18,7 +18,6 @@ import {
   syncMatchToSupabase,
   fetchTodayMatchesFromSupabase,
   subscribeToMatchUpdates,
-  isSupabaseAvailable,
 } from '../services/supabaseService';
 import { formatDateDisplay, getTodayIsoDate } from '../utils/dates';
 import { shareOrCopyMatch } from '../utils/sharing';
@@ -32,9 +31,7 @@ import {
   FileText,
   PlusCircle,
   Trophy,
-  Award,
   Save,
-  Radio,
   RefreshCw,
   Copy,
   Zap,
@@ -57,7 +54,7 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
   setCurrentMatch,
 }) => {
   const [activeMatchNumber, setActiveMatchNumber] = useState<1 | 2>(1);
-  const [useJokerOption, setUseJokerOption] = useState<boolean>(false);
+  const [useJokerOption] = useState<boolean>(false);
   const [isMatchCardOpen, setIsMatchCardOpen] = useState<boolean>(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
@@ -75,7 +72,6 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
   const [teamBScore, setTeamBScore] = useState<TeamScore>({ runs: 0, wickets: 0, overs: 0 });
   const [winnerTeamId, setWinnerTeamId] = useState<'teamA' | 'teamB' | 'TIE' | null>(null);
   const [playerStats, setPlayerStats] = useState<Record<string, PlayerMatchStat>>({});
-  const [showDetailedScorecard, setShowDetailedScorecard] = useState<boolean>(false);
   const [showStatsEntry, setShowStatsEntry] = useState<boolean>(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -453,10 +449,6 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
       ? [...currentMatch.teamA.players, ...currentMatch.teamB.players]
       : [];
 
-  const certifiedStats = Object.values(playerStats)
-    .map((s) => ({ ...s, rating: calculatePlayerPerformance(s) }))
-    .sort((a, b) => b.rating.impactScore - a.rating.impactScore);
-
   return (
     <div className="space-y-5 pb-24 max-w-md mx-auto px-4 pt-4 animate-fade-in">
       {/* Real-time Multi-Device Sync Header Bar */}
@@ -468,9 +460,9 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
           </div>
           <div>
             <div className="text-[10px] font-black uppercase text-turf-400 tracking-wider flex items-center space-x-1">
-              <span>LIVE CLOUD SYNC</span>
+              <span>{syncStatus.toUpperCase()}</span>
               <span className="text-stadium-500">•</span>
-              <span className="text-stadium-300 font-mono">ALL DEVICES</span>
+              <span className="text-stadium-300 font-mono">{lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
             <div className="text-xs text-stadium-400 font-medium">
               Auto-synced for Vasu, Vinodh Sir, RK Sir & All Faculty

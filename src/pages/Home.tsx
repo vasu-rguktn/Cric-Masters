@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import type { Player } from '../types/player';
 import type { MatchSession } from '../types/match';
 import { TossCoin } from '../components/TossCoin';
-import { Users, Play, Calendar, ArrowRight, ShieldCheck, Clock, Star, Target, Radio, RefreshCw } from 'lucide-react';
-import { formatDateDisplay, getTodayIsoDate } from '../utils/dates';
+import { Users, Play, Calendar, ArrowRight, ShieldCheck, Clock, Star, Target } from 'lucide-react';
+import { getTodayIsoDate } from '../utils/dates';
 import { getMatchHistory, getTodayMatchesByDate } from '../services/storageService';
 import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates } from '../services/supabaseService';
 
