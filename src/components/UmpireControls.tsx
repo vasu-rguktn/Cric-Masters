@@ -1,6 +1,7 @@
 import React from 'react';
 import type { MatchSession, MatchScorecard, PlayerMatchStat } from '../types/match';
-import { saveMatchToHistory } from '../services/storageService';
+import { saveMatchToHistory, saveCurrentMatch } from '../services/storageService';
+import { syncMatchToSupabase } from '../services/supabaseService';
 
 interface UmpireControlsProps {
   currentMatch: MatchSession;
@@ -9,6 +10,13 @@ interface UmpireControlsProps {
 }
 
 export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, setCurrentMatch, scorecard }) => {
+  const commitMatchChange = (updated: MatchSession) => {
+    setCurrentMatch(updated);
+    saveCurrentMatch(updated);
+    saveMatchToHistory(updated);
+    syncMatchToSupabase(updated);
+  };
+
   const battingTeamId = scorecard.battingTeamId || 'teamA';
   const currentInnings = scorecard.currentInnings || 1;
 
@@ -18,11 +26,12 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
   const opponentScoreKey = battingTeamId === 'teamA' ? 'teamBScore' : 'teamAScore';
 
   const setTotalOvers = (overs: number) => {
-    setCurrentMatch({
+    const updated = {
       ...currentMatch,
       scorecard: { ...scorecard, totalOvers: overs, currentInnings: 1, battingTeamId: 'teamA' },
       updatedAt: new Date().toISOString(),
-    });
+    };
+    commitMatchChange(updated);
   };
 
   if (!scorecard.totalOvers) {
@@ -46,16 +55,17 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
   }
 
   const toggleDecisionPending = () => {
-    setCurrentMatch({
+    const updated = {
       ...currentMatch,
       scorecard: { ...scorecard, isDecisionPending: !scorecard.isDecisionPending },
       updatedAt: new Date().toISOString(),
-    });
+    };
+    commitMatchChange(updated);
   };
 
   const undoLastAction = () => {
     if (!scorecard.undoStack || scorecard.undoStack.length === 0) return;
-    
+
     const stack = [...scorecard.undoStack];
     const previousStateString = stack.pop();
     if (!previousStateString) return;
@@ -63,14 +73,20 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
     const previousState: MatchScorecard = JSON.parse(previousStateString);
     previousState.undoStack = stack;
 
-    setCurrentMatch({
+    const updated = {
       ...currentMatch,
       scorecard: previousState,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    commitMatchChange(updated);
   };
 
-  const getOrCreatePlayerStat = (playerId: string, teamId: 'teamA' | 'teamB', team: any, stats: Record<string, PlayerMatchStat>) => {
+  const getOrCreatePlayerStat = (
+    playerId: string,
+    teamId: 'teamA' | 'teamB',
+    team: any,
+    stats: Record<string, PlayerMatchStat>
+  ) => {
     if (!stats[playerId]) {
       const player = team?.players.find((p: any) => p.id === playerId);
       stats[playerId] = {
@@ -102,7 +118,7 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
 
     let updatedScorecard = { ...scorecard, undoStack: currentStack };
     if (!updatedScorecard.playerStats) updatedScorecard.playerStats = {};
-    
+
     // Update team score
     updatedScorecard[teamScoreKey] = {
       runs: updatedScorecard[teamScoreKey].runs + runs,
@@ -112,7 +128,12 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
 
     // Update striker stats
     if (updatedScorecard.currentStrikerId) {
-      const stats = getOrCreatePlayerStat(updatedScorecard.currentStrikerId, battingTeamId, battingTeam, updatedScorecard.playerStats);
+      const stats = getOrCreatePlayerStat(
+        updatedScorecard.currentStrikerId,
+        battingTeamId,
+        battingTeam,
+        updatedScorecard.playerStats
+      );
       stats.runsScored += runs;
       stats.ballsFaced += balls;
       if (runs === 4) stats.fours += 1;
@@ -123,7 +144,12 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
     // Update bowler stats
     if (updatedScorecard.currentBowlerId) {
       const fieldingTeamId = battingTeamId === 'teamA' ? 'teamB' : 'teamA';
-      const stats = getOrCreatePlayerStat(updatedScorecard.currentBowlerId, fieldingTeamId, fieldingTeam, updatedScorecard.playerStats);
+      const stats = getOrCreatePlayerStat(
+        updatedScorecard.currentBowlerId,
+        fieldingTeamId,
+        fieldingTeam,
+        updatedScorecard.playerStats
+      );
       stats.runsConceded += runs;
       stats.oversBowled += balls;
       stats.wicketsTaken += wickets;
@@ -134,8 +160,9 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
     const maxWickets = (battingTeam?.players.length || 11) - 1;
     const isAllOut = updatedScorecard[teamScoreKey].wickets >= maxWickets;
     const isOversFinished = updatedScorecard[teamScoreKey].overs >= totalBalls;
-    
-    const isTargetChased = currentInnings === 2 && updatedScorecard[teamScoreKey].runs > updatedScorecard[opponentScoreKey].runs;
+
+    const isTargetChased =
+      currentInnings === 2 && updatedScorecard[teamScoreKey].runs > updatedScorecard[opponentScoreKey].runs;
 
     const isInningsOver = isAllOut || isOversFinished || isTargetChased;
 
@@ -147,25 +174,26 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
         updatedScorecard.currentStrikerId = undefined;
         updatedScorecard.currentNonStrikerId = undefined;
         updatedScorecard.currentBowlerId = undefined;
-        
-        setCurrentMatch({
+
+        const updated = {
           ...currentMatch,
           scorecard: updatedScorecard,
           updatedAt: new Date().toISOString(),
-        });
+        };
+        commitMatchChange(updated);
       } else {
         // Match is fully complete
         updatedScorecard.isCompleted = true;
         let winnerTeamId: 'teamA' | 'teamB' | 'TIE' | null = null;
-        
+
         const teamARuns = updatedScorecard.teamAScore.runs;
         const teamBRuns = updatedScorecard.teamBScore.runs;
-        
+
         if (teamARuns > teamBRuns) winnerTeamId = 'teamA';
         else if (teamBRuns > teamARuns) winnerTeamId = 'teamB';
         else winnerTeamId = 'TIE';
 
-        const finalMatch = {
+        const finalMatch: MatchSession = {
           ...currentMatch,
           scorecard: updatedScorecard,
           winnerTeamId,
@@ -173,8 +201,7 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
           updatedAt: new Date().toISOString(),
         };
 
-        setCurrentMatch(finalMatch);
-        saveMatchToHistory(finalMatch); // Auto-save match
+        commitMatchChange(finalMatch);
       }
       return;
     }
@@ -182,7 +209,7 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
     // Normal Strike Rotation
     const isOverComplete = balls > 0 && updatedScorecard[teamScoreKey].overs % 6 === 0;
     const isOddRun = runs % 2 !== 0;
-    
+
     if (wickets > 0) {
       updatedScorecard.currentStrikerId = undefined;
     } else {
@@ -199,11 +226,12 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
       updatedScorecard.currentBowlerId = undefined;
     }
 
-    setCurrentMatch({
+    const updated = {
       ...currentMatch,
       scorecard: updatedScorecard,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    commitMatchChange(updated);
   };
 
   if (scorecard.isDecisionPending) {
@@ -226,14 +254,15 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
   const isMissingBowler = !scorecard.currentBowlerId;
 
   if (isMissingBatters || isMissingBowler) {
-    const unselectedBatters = battingTeam?.players.filter(
-      p => p.id !== scorecard.currentStrikerId && p.id !== scorecard.currentNonStrikerId
-    ) || [];
+    const unselectedBatters =
+      battingTeam?.players.filter(
+        (p) => p.id !== scorecard.currentStrikerId && p.id !== scorecard.currentNonStrikerId
+      ) || [];
 
     return (
       <div className="bg-stadium-900 rounded-2xl p-6 border border-turf-500/30 shadow-2xl mt-4">
         <h3 className="text-xl font-black text-white mb-4">Select Players</h3>
-        
+
         {isMissingBatters && (
           <>
             {!scorecard.currentStrikerId && (
@@ -241,12 +270,22 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
                 <label className="block text-sm font-bold text-stadium-300 mb-2">Select Striker</label>
                 <select
                   className="w-full bg-stadium-800 text-white p-3 rounded-lg border border-stadium-600 focus:border-turf-400 outline-none"
-                  onChange={(e) => setCurrentMatch({ ...currentMatch, scorecard: { ...scorecard, currentStrikerId: e.target.value } })}
+                  onChange={(e) =>
+                    commitMatchChange({
+                      ...currentMatch,
+                      scorecard: { ...scorecard, currentStrikerId: e.target.value },
+                      updatedAt: new Date().toISOString(),
+                    })
+                  }
                   defaultValue=""
                 >
-                  <option value="" disabled>Select a player...</option>
-                  {unselectedBatters.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+                  <option value="" disabled>
+                    Select a player...
+                  </option>
+                  {unselectedBatters.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -257,12 +296,22 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
                 <label className="block text-sm font-bold text-stadium-300 mb-2">Select Non-Striker</label>
                 <select
                   className="w-full bg-stadium-800 text-white p-3 rounded-lg border border-stadium-600 focus:border-turf-400 outline-none"
-                  onChange={(e) => setCurrentMatch({ ...currentMatch, scorecard: { ...scorecard, currentNonStrikerId: e.target.value } })}
+                  onChange={(e) =>
+                    commitMatchChange({
+                      ...currentMatch,
+                      scorecard: { ...scorecard, currentNonStrikerId: e.target.value },
+                      updatedAt: new Date().toISOString(),
+                    })
+                  }
                   defaultValue=""
                 >
-                  <option value="" disabled>Select a player...</option>
-                  {unselectedBatters.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+                  <option value="" disabled>
+                    Select a player...
+                  </option>
+                  {unselectedBatters.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -275,12 +324,22 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
             <label className="block text-sm font-bold text-stadium-300 mb-2">Select Next Bowler</label>
             <select
               className="w-full bg-stadium-800 text-white p-3 rounded-lg border border-stadium-600 focus:border-turf-400 outline-none"
-              onChange={(e) => setCurrentMatch({ ...currentMatch, scorecard: { ...scorecard, currentBowlerId: e.target.value } })}
+              onChange={(e) =>
+                commitMatchChange({
+                  ...currentMatch,
+                  scorecard: { ...scorecard, currentBowlerId: e.target.value },
+                  updatedAt: new Date().toISOString(),
+                })
+              }
               defaultValue=""
             >
-              <option value="" disabled>Select a player...</option>
-              {fieldingTeam?.players.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+              <option value="" disabled>
+                Select a player...
+              </option>
+              {fieldingTeam?.players.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
               ))}
             </select>
           </div>
@@ -292,7 +351,7 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
   const teamAName = currentMatch.teamA?.name || 'Team A';
   const teamBName = currentMatch.teamB?.name || 'Team B';
   const hasUndo = scorecard.undoStack && scorecard.undoStack.length > 0;
-  
+
   const targetScore = currentInnings === 2 ? scorecard[opponentScoreKey].runs + 1 : null;
 
   return (
@@ -321,16 +380,14 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
             </button>
           </div>
         </div>
-        
+
         <div className="flex justify-between items-center bg-stadium-800 p-2 rounded-lg">
-          <div className="text-sm font-bold text-stadium-300">
-            Innings {currentInnings}
-          </div>
+          <div className="text-sm font-bold text-stadium-300">Innings {currentInnings}</div>
           <div className="text-sm font-black text-turf-400">
             {battingTeamId === 'teamA' ? teamAName : teamBName} Batting
           </div>
         </div>
-        
+
         {targetScore && (
           <div className="bg-stadium-950/50 p-2 rounded-lg text-center border border-stadium-700">
             <span className="text-xs text-stadium-400 uppercase font-bold tracking-widest">Target: </span>
@@ -369,10 +426,10 @@ export const UmpireControls: React.FC<UmpireControlsProps> = ({ currentMatch, se
           Wide (+0)
         </button>
         <button
-          onClick={() => updateScore(0, 0, 0)}
+          onClick={() => updateScore(1, 0, 0)}
           className="p-3 bg-stadium-800 text-stadium-200 border border-stadium-600 rounded-xl font-bold hover:bg-stadium-700 active:scale-95"
         >
-          No Ball (+0)
+          No Ball (+1)
         </button>
       </div>
     </div>

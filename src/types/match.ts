@@ -54,6 +54,7 @@ export interface TossRecord {
 export interface MatchSession {
   id: string;
   date: string;
+  matchNumber?: 1 | 2;
   availablePlayerIds: string[];
   teamA: Team | null;
   teamB: Team | null;

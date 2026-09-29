@@ -1,6 +1,7 @@
 import type { Player } from '../types/player';
 import type { Team } from '../types/team';
 import type { MatchSession } from '../types/match';
+import { isVasu } from './playerHelpers';
 
 export function selectCaptains(
   teamAPlayers: Player[],
@@ -35,8 +36,16 @@ export function selectCaptains(
     return score;
   };
 
-  const sortedA = [...teamAPlayers].sort((a, b) => scoreCaptainCandidate(b) - scoreCaptainCandidate(a));
-  const sortedB = [...teamBPlayers].sort((a, b) => scoreCaptainCandidate(b) - scoreCaptainCandidate(a));
+  // Prevent Vasu from being captain
+  const candidatesA = teamAPlayers.filter((p) => !isVasu(p));
+  const candidatesB = teamBPlayers.filter((p) => !isVasu(p));
+
+  const sortedA = [...(candidatesA.length > 0 ? candidatesA : teamAPlayers)].sort(
+    (a, b) => scoreCaptainCandidate(b) - scoreCaptainCandidate(a)
+  );
+  const sortedB = [...(candidatesB.length > 0 ? candidatesB : teamBPlayers)].sort(
+    (a, b) => scoreCaptainCandidate(b) - scoreCaptainCandidate(a)
+  );
 
   return {
     captainA: sortedA[0] || teamAPlayers[0],
@@ -47,7 +56,7 @@ export function selectCaptains(
 export function getCaptainReplacementCandidates(
   team: Team
 ): Player[] {
-  const candidates = team.players.filter((p) => p.id !== team.captainId);
+  const candidates = team.players.filter((p) => p.id !== team.captainId && !isVasu(p));
   return candidates.sort((a, b) => {
     const scoreA = (a.isRegular ? 5 : 0) + a.roles.length;
     const scoreB = (b.isRegular ? 5 : 0) + b.roles.length;
@@ -71,3 +80,4 @@ export function replaceCaptainInTeam(
     name: dynamicName,
   };
 }
+

@@ -63,6 +63,38 @@ export function getMatchHistory(): MatchSession[] {
   }
 }
 
+export function getTodayMatchesByDate(date: string): { match1: MatchSession | null; match2: MatchSession | null } {
+  const history = getMatchHistory();
+  const current = getCurrentMatch();
+  const matchesForDate = history.filter((m) => m.date === date);
+
+  let match1 = matchesForDate.find((m) => m.matchNumber === 1) || null;
+  let match2 = matchesForDate.find((m) => m.matchNumber === 2) || null;
+
+  if (!match1 && current && current.date === date && (current.matchNumber === 1 || !current.matchNumber)) {
+    match1 = current;
+  }
+  if (!match2 && current && current.date === date && current.matchNumber === 2) {
+    match2 = current;
+  }
+
+  // If no match has matchNumber set explicitly, assign the first one found to match1
+  if (!match1 && !match2 && matchesForDate.length > 0) {
+    match1 = matchesForDate[0];
+    if (matchesForDate.length > 1) {
+      match2 = matchesForDate[1];
+    }
+  }
+
+  return { match1, match2 };
+}
+
+export function getMatchByDateAndNumber(date: string, matchNumber: 1 | 2): MatchSession | null {
+  const { match1, match2 } = getTodayMatchesByDate(date);
+  return matchNumber === 1 ? match1 : match2;
+}
+
+
 export function saveMatchToHistory(match: MatchSession): void {
   const history = getMatchHistory();
   const existingIdx = history.findIndex((m) => m.id === match.id);

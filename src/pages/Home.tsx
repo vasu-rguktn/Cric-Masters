@@ -2,15 +2,16 @@ import React, { useState, useEffect } from 'react';
 import type { Player } from '../types/player';
 import type { MatchSession } from '../types/match';
 import { TossCoin } from '../components/TossCoin';
-import { Users, Play, Calendar, ArrowRight, ShieldCheck, Clock, Star, Target } from 'lucide-react';
-import { formatDateDisplay } from '../utils/dates';
-import { getMatchHistory } from '../services/storageService';
+import { Users, Play, Calendar, ArrowRight, ShieldCheck, Clock, Star, Target, Radio, RefreshCw } from 'lucide-react';
+import { formatDateDisplay, getTodayIsoDate } from '../utils/dates';
+import { getMatchHistory, getTodayMatchesByDate } from '../services/storageService';
+import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates } from '../services/supabaseService';
 
 interface HomeProps {
   players: Player[];
   selectedPlayerIds: string[];
   currentMatch: MatchSession | null;
-  onNavigate: (tab: 'home' | 'today' | 'players' | 'history' | 'settings') => void;
+  onNavigate: (tab: 'home' | 'today' | 'players' | 'history' | 'score' | 'settings') => void;
   onMakeTeamsClick: () => void;
 }
 
@@ -22,52 +23,116 @@ export const Home: React.FC<HomeProps> = ({
   onMakeTeamsClick,
 }) => {
   const [now, setNow] = useState<Date>(new Date());
+  const [match1, setMatch1] = useState<MatchSession | null>(null);
+  const [match2, setMatch2] = useState<MatchSession | null>(null);
   const [lastMatchStats, setLastMatchStats] = useState<{
     batsman: { name: string; runs: number; balls: number } | null;
     bowler: { name: string; wickets: number; runs: number } | null;
   } | null>(null);
+
+  const todayStr = currentMatch?.date || getTodayIsoDate();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  const loadTodayMatches = async () => {
+    const local = getTodayMatchesByDate(todayStr);
+    let m1 = local.match1;
+    let m2 = local.match2;
+
+    try {
+      const cloudMatches = await fetchTodayMatchesFromSupabase(todayStr);
+      if (cloudMatches && cloudMatches.length > 0) {
+        const cloudM1 = cloudMatches.find((m) => m.matchNumber === 1);
+        const cloudM2 = cloudMatches.find((m) => m.matchNumber === 2);
+        if (cloudM1) m1 = cloudM1;
+        if (cloudM2) m2 = cloudM2;
+      }
+    } catch (e) {
+      // use local
+    }
+
+    setMatch1(m1);
+    setMatch2(m2);
+  };
+
+  useEffect(() => {
+    loadTodayMatches();
+
+    const unsubscribe = subscribeToMatchUpdates(todayStr, (updatedMatch) => {
+      if (updatedMatch.matchNumber === 2) {
+        setMatch2(updatedMatch);
+      } else {
+        setMatch1(updatedMatch);
+      }
+    });
+
+    const interval = setInterval(() => {
+      loadTodayMatches();
+    }, 3000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
+  }, [todayStr]);
+
   useEffect(() => {
     const history = getMatchHistory();
-    const lastValidMatch = history.reverse().find(m => m.scorecard && m.scorecard.playerStats && Object.keys(m.scorecard.playerStats).length > 0);
-    
+    const lastValidMatch = history
+      .slice()
+      .reverse()
+      .find(
+        (m) =>
+          m.scorecard &&
+          m.scorecard.playerStats &&
+          Object.keys(m.scorecard.playerStats).length > 0
+      );
+
     if (lastValidMatch && lastValidMatch.scorecard) {
       let bestBat = null;
       let bestBowl = null;
-      
+
       const stats = Object.values(lastValidMatch.scorecard.playerStats);
       if (stats.length > 0) {
         const topBatsmen = [...stats].sort((a, b) => b.runsScored - a.runsScored);
         if (topBatsmen[0].runsScored > 0) {
-          bestBat = { name: topBatsmen[0].playerName, runs: topBatsmen[0].runsScored, balls: topBatsmen[0].ballsFaced };
+          bestBat = {
+            name: topBatsmen[0].playerName,
+            runs: topBatsmen[0].runsScored,
+            balls: topBatsmen[0].ballsFaced,
+          };
         }
-        
+
         const topBowlers = [...stats].sort((a, b) => {
           if (b.wicketsTaken !== a.wicketsTaken) return b.wicketsTaken - a.wicketsTaken;
           return a.runsConceded - b.runsConceded;
         });
         if (topBowlers[0].wicketsTaken > 0 || topBowlers[0].oversBowled > 0) {
-          bestBowl = { name: topBowlers[0].playerName, wickets: topBowlers[0].wicketsTaken, runs: topBowlers[0].runsConceded };
+          bestBowl = {
+            name: topBowlers[0].playerName,
+            wickets: topBowlers[0].wicketsTaken,
+            runs: topBowlers[0].runsConceded,
+          };
         }
       }
-      
+
       if (bestBat || bestBowl) {
         setLastMatchStats({ batsman: bestBat, bowler: bestBowl });
       }
     }
   }, []);
 
-  const formattedDate = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).toUpperCase();
+  const formattedDate = now
+    .toLocaleDateString('en-US', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })
+    .toUpperCase();
 
   const formattedTime = now.toLocaleTimeString('en-US', {
     hour: '2-digit',
@@ -77,7 +142,7 @@ export const Home: React.FC<HomeProps> = ({
   });
 
   return (
-    <div className="space-y-6 pb-20 max-w-md mx-auto px-4 pt-4">
+    <div className="space-y-6 pb-20 max-w-md mx-auto px-4 pt-4 animate-fade-in">
       {/* Live Date & Time Bar */}
       <div className="bg-stadium-900 border border-stadium-800 rounded-2xl px-4 py-2.5 flex items-center justify-between shadow-md text-xs">
         <div className="flex items-center space-x-1.5 text-turf-400 font-extrabold tracking-wider">
@@ -97,7 +162,7 @@ export const Home: React.FC<HomeProps> = ({
             <img
               src="./cric.png"
               alt="Cric Masters Logo"
-              className="w-36 h-36 object-contain drop-shadow-2xl hover:scale-105 transition-transform"
+              className="w-32 h-32 object-contain drop-shadow-2xl hover:scale-105 transition-transform"
             />
           </div>
         </div>
@@ -108,7 +173,7 @@ export const Home: React.FC<HomeProps> = ({
         </div>
 
         <p className="text-xs font-bold text-stadium-300">
-          Smart daily team generator & instant coin toss for faculty matches.
+          Real-time cloud sync across all phones & devices for Vasu, Vinodh Sir, RK Sir & Faculty.
         </p>
 
         {/* Quick Ground Status */}
@@ -149,12 +214,81 @@ export const Home: React.FC<HomeProps> = ({
         >
           <div className="flex items-center space-x-3">
             <Calendar className="w-5 h-5 text-turf-400" />
-            <span>Review Player Check-in</span>
+            <span>Today's Match Sessions</span>
           </div>
           <span className="text-xs font-mono font-bold text-turf-400">
             {selectedPlayerIds.length}/{players.filter((p) => p.isActive).length}
           </span>
         </button>
+      </div>
+
+      {/* TODAY'S MATCH 1 & MATCH 2 STATUS CARDS */}
+      <div className="space-y-3">
+        <div className="text-xs font-black text-stadium-300 uppercase tracking-wider px-1 flex items-center justify-between">
+          <span>Today's Matches</span>
+          <span className="text-[10px] text-turf-400 font-mono">Live Synced</span>
+        </div>
+
+        {/* Match 1 Card */}
+        {match1 && match1.teamA && match1.teamB ? (
+          <div
+            onClick={() => onNavigate('today')}
+            className="bg-stadium-900 border border-turf-500/40 hover:border-turf-400 rounded-3xl p-4 cursor-pointer transition-all space-y-2 shadow-lg"
+          >
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-turf-400 font-black uppercase tracking-wider">
+                🏏 MATCH 1
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-turf-500/20 text-turf-400 font-bold border border-turf-500/30">
+                {match1.isLocked ? 'LOCKED' : 'TEAMS READY'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-around py-2 border-y border-stadium-800 text-sm font-black">
+              <span className="text-turf-400 truncate max-w-[40%] text-center">{match1.teamA.name}</span>
+              <span className="text-xs text-stadium-400 font-mono font-extrabold">VS</span>
+              <span className="text-gold-400 truncate max-w-[40%] text-center">{match1.teamB.name}</span>
+            </div>
+
+            <div className="text-[11px] text-center text-stadium-300 font-bold">
+              Tap to view Match 1 details or live scorecard →
+            </div>
+          </div>
+        ) : (
+          <div
+            onClick={() => onNavigate('today')}
+            className="bg-stadium-900/60 border border-stadium-800 rounded-2xl p-3 text-center cursor-pointer hover:border-stadium-700 transition-all text-xs text-stadium-400"
+          >
+            Match 1 not yet generated. Tap to create teams.
+          </div>
+        )}
+
+        {/* Match 2 Card */}
+        {match2 && match2.teamA && match2.teamB && (
+          <div
+            onClick={() => onNavigate('today')}
+            className="bg-stadium-900 border border-gold-500/40 hover:border-gold-400 rounded-3xl p-4 cursor-pointer transition-all space-y-2 shadow-lg"
+          >
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gold-400 font-black uppercase tracking-wider">
+                🏏 MATCH 2
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gold-500/20 text-gold-400 font-bold border border-gold-500/30">
+                {match2.isLocked ? 'LOCKED' : 'TEAMS READY'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-around py-2 border-y border-stadium-800 text-sm font-black">
+              <span className="text-turf-400 truncate max-w-[40%] text-center">{match2.teamA.name}</span>
+              <span className="text-xs text-stadium-400 font-mono font-extrabold">VS</span>
+              <span className="text-gold-400 truncate max-w-[40%] text-center">{match2.teamB.name}</span>
+            </div>
+
+            <div className="text-[11px] text-center text-stadium-300 font-bold">
+              Tap to view Match 2 details or live scorecard →
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Instant Coin Toss Tool Widget */}
@@ -164,33 +298,6 @@ export const Home: React.FC<HomeProps> = ({
         </div>
         <TossCoin />
       </div>
-
-      {/* Latest Match Overview Widget */}
-      {currentMatch && currentMatch.teamA && currentMatch.teamB && (
-        <div
-          onClick={() => onNavigate('today')}
-          className="bg-stadium-900 border border-stadium-800 hover:border-stadium-700 rounded-3xl p-4 cursor-pointer transition-all space-y-2 shadow-lg"
-        >
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-stadium-300 font-black uppercase tracking-wider">
-              Today's Generated Match
-            </span>
-            <span className="text-turf-400 font-mono text-[11px] font-bold">
-              {formatDateDisplay(currentMatch.date)}
-            </span>
-          </div>
-
-          <div className="flex items-center justify-around py-2 border-y border-stadium-800 text-sm font-black">
-            <span className="text-turf-400">{currentMatch.teamA.name}</span>
-            <span className="text-xs text-stadium-400 font-mono font-extrabold">VS</span>
-            <span className="text-gold-400">{currentMatch.teamB.name}</span>
-          </div>
-
-          <div className="text-[11px] text-center text-stadium-300 font-bold">
-            Tap to view teams, swap captains, lock or share match details →
-          </div>
-        </div>
-      )}
 
       {/* Yesterday's Top Performers Widget */}
       {lastMatchStats && (

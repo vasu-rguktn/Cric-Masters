@@ -7,6 +7,16 @@ import {
 } from './teamScoring';
 import { calculateRepetitionPenalty } from './repetitionPenalty';
 import { selectCaptains } from './captainSelector';
+import {
+  isVasu,
+  isSrinivas,
+  isShiva,
+  isRK,
+  isAnurupam,
+  isSuresh,
+  isKrishna,
+  isVinod,
+} from './playerHelpers';
 
 export function generateTeams(
   availablePlayers: Player[],
@@ -23,38 +33,35 @@ export function generateTeams(
 
   let pool = [...availablePlayers];
 
-  if (useJokerForOdd && total % 2 !== 0) {
-    pool = shuffleArray([...availablePlayers]);
-    jokerPlayer = pool.pop();
-    teamASize = Math.floor(pool.length / 2);
+  // If odd number of players:
+  // Vasu is always the extra player / joker playing on both sides if Vasu is present
+  if (total % 2 !== 0) {
+    const vasuIndex = pool.findIndex(isVasu);
+    if (vasuIndex !== -1) {
+      jokerPlayer = pool.splice(vasuIndex, 1)[0];
+      teamASize = pool.length / 2;
+    } else if (useJokerForOdd) {
+      pool = shuffleArray([...availablePlayers]);
+      jokerPlayer = pool.pop();
+      teamASize = pool.length / 2;
+    } else {
+      teamASize = Math.floor(total / 2);
+    }
   } else {
     teamASize = Math.floor(total / 2);
   }
 
-  let wereTogetherLastMatch = false;
-  if (history.length > 0) {
-    const latestMatch = history.reduce((latest, current) => 
-      new Date(current.date) > new Date(latest.date) ? current : latest
-    , history[0]);
+  const hasVasu = pool.some(isVasu);
+  const hasRK = pool.some(isRK);
+  const hasAnurupam = pool.some(isAnurupam);
 
-    if (latestMatch && latestMatch.teamA && latestMatch.teamB) {
-      const teamAHasRK = latestMatch.teamA.players.some(isRK);
-      const teamAHasLK = latestMatch.teamA.players.some(isLK);
-      const teamAHasVasu = latestMatch.teamA.players.some(isVasu);
-      
-      const teamBHasRK = latestMatch.teamB.players.some(isRK);
-      const teamBHasLK = latestMatch.teamB.players.some(isLK);
-      const teamBHasVasu = latestMatch.teamB.players.some(isVasu);
+  // Probabilistic 5/6 (83.33%) targets for RK and Anurupam to be in Vasu's team
+  const rkTargetSame = (hasRK && hasVasu) ? (Math.random() < 5 / 6) : null;
+  const anurupamTargetSame = (hasAnurupam && hasVasu) ? (Math.random() < 5 / 6) : null;
 
-      if ((teamAHasRK && teamAHasLK && teamAHasVasu) || (teamBHasRK && teamBHasLK && teamBHasVasu)) {
-        wereTogetherLastMatch = true;
-      }
-    }
-  }
+  const targets = { rkTargetSame, anurupamTargetSame };
 
-  const shouldForceTogether = !wereTogetherLastMatch && Math.random() < 0.6;
-
-  const SAMPLE_COUNT = Math.min(600, Math.pow(2, pool.length));
+  const SAMPLE_COUNT = Math.min(1000, Math.pow(2, pool.length));
   let bestScore = -Infinity;
   let bestSplit: { teamA: Player[]; teamB: Player[] } | null = null;
 
@@ -63,33 +70,8 @@ export function generateTeams(
     const candidateA = shuffled.slice(0, teamASize);
     const candidateB = shuffled.slice(teamASize);
 
-    // Keep Krishna sir and Vasu in different/opposite teams
-    const hasKrishnaA = candidateA.some(isKrishna);
-    const hasVasuA = candidateA.some(isVasu);
-    const hasKrishnaB = candidateB.some(isKrishna);
-    const hasVasuB = candidateB.some(isVasu);
-
-    if ((hasKrishnaA && hasVasuA) || (hasKrishnaB && hasVasuB)) {
+    if (!isSplitValid(candidateA, candidateB, targets, true)) {
       continue;
-    }
-
-    const hasRKA = candidateA.some(isRK);
-    const hasLKA = candidateA.some(isLK);
-    const hasRKB = candidateB.some(isRK);
-    const hasLKB = candidateB.some(isLK);
-
-    const togetherInA = hasRKA && hasLKA && hasVasuA;
-    const togetherInB = hasRKB && hasLKB && hasVasuB;
-    const areTogether = togetherInA || togetherInB;
-    const areAllPresent = (hasRKA || hasRKB) && (hasLKA || hasLKB) && (hasVasuA || hasVasuB);
-
-    if (areAllPresent) {
-      if (shouldForceTogether && !areTogether) {
-        continue;
-      }
-      if (!shouldForceTogether && areTogether) {
-        continue;
-      }
     }
 
     const summaryA = calculateTeamRoleSummary(candidateA);
@@ -107,44 +89,30 @@ export function generateTeams(
     }
   }
 
+  // Fallback if no candidate satisfied strict probabilistic targets
   if (!bestSplit) {
-    let fallbackA: Player[] = [];
-    let fallbackB: Player[] = [];
     let attempts = 0;
-    while (attempts < 100) {
+    while (attempts < 500) {
       const shuffled = shuffleArray([...pool]);
-      fallbackA = shuffled.slice(0, teamASize);
-      fallbackB = shuffled.slice(teamASize);
-      const hasKrishnaA = fallbackA.some(isKrishna);
-      const hasVasuA = fallbackA.some(isVasu);
-      const hasKrishnaB = fallbackB.some(isKrishna);
-      const hasVasuB = fallbackB.some(isVasu);
-      
-      const hasRKA = fallbackA.some(isRK);
-      const hasLKA = fallbackA.some(isLK);
-      const hasRKB = fallbackB.some(isRK);
-      const hasLKB = fallbackB.some(isLK);
+      const candidateA = shuffled.slice(0, teamASize);
+      const candidateB = shuffled.slice(teamASize);
 
-      const togetherInA = hasRKA && hasLKA && hasVasuA;
-      const togetherInB = hasRKB && hasLKB && hasVasuB;
-      const areTogether = togetherInA || togetherInB;
-      const areAllPresent = (hasRKA || hasRKB) && (hasLKA || hasLKB) && (hasVasuA || hasVasuB);
-
-      let rkLkVasuOk = true;
-      if (areAllPresent) {
-        if (shouldForceTogether && !areTogether) rkLkVasuOk = false;
-        if (!shouldForceTogether && areTogether) rkLkVasuOk = false;
-      }
-
-      if (!((hasKrishnaA && hasVasuA) || (hasKrishnaB && hasVasuB)) && rkLkVasuOk) {
+      // Relax probabilistic targets if needed after 200 attempts
+      const enforceProb = attempts < 200;
+      if (isSplitValid(candidateA, candidateB, targets, enforceProb)) {
+        bestSplit = { teamA: candidateA, teamB: candidateB };
         break;
       }
       attempts++;
     }
-    bestSplit = {
-      teamA: fallbackA,
-      teamB: fallbackB,
-    };
+
+    if (!bestSplit) {
+      const shuffled = shuffleArray([...pool]);
+      bestSplit = {
+        teamA: shuffled.slice(0, teamASize),
+        teamB: shuffled.slice(teamASize),
+      };
+    }
   }
 
   const { captainA, captainB } = selectCaptains(bestSplit.teamA, bestSplit.teamB, history);
@@ -198,6 +166,87 @@ export function generateTeams(
   };
 }
 
+function isSplitValid(
+  candidateA: Player[],
+  candidateB: Player[],
+  targets: {
+    rkTargetSame: boolean | null;
+    anurupamTargetSame: boolean | null;
+  },
+  enforceProbabilistic: boolean = true
+): boolean {
+  // 1. Srinivas & Shiva ALWAYS in opposite teams
+  const srinivasInA = candidateA.some(isSrinivas);
+  const srinivasInB = candidateB.some(isSrinivas);
+  const shivaInA = candidateA.some(isShiva);
+  const shivaInB = candidateB.some(isShiva);
+
+  if ((srinivasInA && shivaInA) || (srinivasInB && shivaInB)) {
+    return false;
+  }
+
+  // 2. Suresh & Vasu ALWAYS in same team
+  const vasuInA = candidateA.some(isVasu);
+  const vasuInB = candidateB.some(isVasu);
+  const sureshInA = candidateA.some(isSuresh);
+  const sureshInB = candidateB.some(isSuresh);
+
+  if ((sureshInA || sureshInB) && (vasuInA || vasuInB)) {
+    if ((sureshInA && vasuInB) || (sureshInB && vasuInA)) {
+      return false;
+    }
+  }
+
+  // 3. Vinod Sir & Vasu ALWAYS in same team
+  const vinodInA = candidateA.some(isVinod);
+  const vinodInB = candidateB.some(isVinod);
+
+  if ((vinodInA || vinodInB) && (vasuInA || vasuInB)) {
+    if ((vinodInA && vasuInB) || (vinodInB && vasuInA)) {
+      return false;
+    }
+  }
+
+  // 4. Krishna & Vasu ALWAYS in opposite teams
+  const krishnaInA = candidateA.some(isKrishna);
+  const krishnaInB = candidateB.some(isKrishna);
+
+  if ((krishnaInA || krishnaInB) && (vasuInA || vasuInB)) {
+    if ((krishnaInA && vasuInA) || (krishnaInB && vasuInB)) {
+      return false;
+    }
+  }
+
+  // 5. Probabilistic 5/6 rules for RK and Anurupam with Vasu
+  if (enforceProbabilistic && (vasuInA || vasuInB)) {
+    // RK with Vasu 5 out of 6 times
+    if (targets.rkTargetSame !== null) {
+      const rkInA = candidateA.some(isRK);
+      const rkInB = candidateB.some(isRK);
+      if (rkInA || rkInB) {
+        const isSame = (rkInA && vasuInA) || (rkInB && vasuInB);
+        if (isSame !== targets.rkTargetSame) {
+          return false;
+        }
+      }
+    }
+
+    // Anurupam with Vasu 5 out of 6 times
+    if (targets.anurupamTargetSame !== null) {
+      const anurupamInA = candidateA.some(isAnurupam);
+      const anurupamInB = candidateB.some(isAnurupam);
+      if (anurupamInA || anurupamInB) {
+        const isSame = (anurupamInA && vasuInA) || (anurupamInB && vasuInB);
+        if (isSame !== targets.anurupamTargetSame) {
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
 function shuffleArray<T>(array: T[]): T[] {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -205,24 +254,4 @@ function shuffleArray<T>(array: T[]): T[] {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
-}
-
-function isKrishna(player: Player): boolean {
-  const name = player.name.toLowerCase().trim();
-  return name === 'krishna' || name === 'krishna sir' || player.id === 'p-krishna';
-}
-
-function isVasu(player: Player): boolean {
-  const name = player.name.toLowerCase().trim();
-  return name === 'vasu' || player.id === 'p-vasu';
-}
-
-function isRK(player: Player): boolean {
-  const name = player.name.toLowerCase().trim();
-  return name === 'rk' || name === 'rk sir' || player.id === 'p-rk';
-}
-
-function isLK(player: Player): boolean {
-  const name = player.name.toLowerCase().trim();
-  return name === 'lk' || name === 'lk sir' || player.id === 'p-lk';
 }
