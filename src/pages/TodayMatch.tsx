@@ -35,6 +35,10 @@ import {
   RefreshCw,
   Copy,
   Zap,
+  UserCheck,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -57,6 +61,10 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
   const [useJokerOption] = useState<boolean>(false);
   const [isMatchCardOpen, setIsMatchCardOpen] = useState<boolean>(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [isPlayerSelectorExpanded, setIsPlayerSelectorExpanded] = useState<boolean>(false);
+
+  const isPlayerSelectionInitializedRef = React.useRef<boolean>(false);
+  const prevActiveMatchNumRef = React.useRef<1 | 2>(activeMatchNumber);
 
   // Sync state
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -118,8 +126,15 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
       if (active) {
         setCurrentMatch(active);
         saveCurrentMatch(active);
-        if (active.availablePlayerIds && active.availablePlayerIds.length > 0) {
-          setSelectedPlayerIds(active.availablePlayerIds);
+
+        // Only set selectedPlayerIds from active match on initial load OR explicit active match number change
+        const matchSwitched = prevActiveMatchNumRef.current !== activeMatchNumber;
+        if (!isPlayerSelectionInitializedRef.current || matchSwitched) {
+          if (active.availablePlayerIds && active.availablePlayerIds.length > 0) {
+            setSelectedPlayerIds(active.availablePlayerIds);
+          }
+          isPlayerSelectionInitializedRef.current = true;
+          prevActiveMatchNumRef.current = activeMatchNumber;
         }
       }
 
@@ -244,6 +259,7 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
     };
 
     await commitAndBroadcastMatch(newMatch);
+    setIsPlayerSelectorExpanded(false);
 
     confetti({
       particleCount: 50,
@@ -582,41 +598,24 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
         </div>
       )}
 
-      {/* PLAYER SELECTOR & ATTENDANCE */}
-      <div className="space-y-3">
-        <PlayerSelector
-          players={players}
-          selectedIds={selectedPlayerIds}
-          onTogglePlayer={handleTogglePlayer}
-          onSelectAll={handleSelectAll}
-          onClearAll={handleClearAll}
-          onSelectYesterday={handleSelectYesterday}
-        />
-
-        {selectedPlayerIds.length % 2 !== 0 && selectedPlayerIds.length >= 5 && (
-          <div className="bg-stadium-900/60 border border-stadium-800 rounded-2xl p-3 flex items-center justify-between text-xs">
-            <span className="text-stadium-300">
-              Odd player count ({selectedPlayerIds.length}): Vasu plays on both sides (Joker)
-            </span>
-            <span className="text-[10px] font-black text-gold-400 bg-gold-500/20 px-2 py-0.5 rounded-lg border border-gold-500/40">
-              EXTRA PLAYER AUTO-ON
+      {/* MATCH TEAMS OR PLAYER SELECTOR DEPENDING ON STATE */}
+      {currentMatch && currentMatch.teamA && currentMatch.teamB ? (
+        <div className="space-y-6 animate-fade-in">
+          {/* Live Synced Match Banner */}
+          <div className="bg-gradient-to-r from-turf-500/20 via-stadium-900 to-turf-500/20 border border-turf-500/40 rounded-2xl p-3 flex items-center justify-between shadow-md">
+            <div className="flex items-center space-x-2">
+              <CheckCircle2 className="w-5 h-5 text-turf-400" />
+              <div>
+                <div className="text-xs font-black text-white">MATCH {activeMatchNumber} TEAMS GENERATED & SHARED</div>
+                <div className="text-[10px] text-turf-400 font-bold">Live Synced for Vasu, Vinodh Sir, RK Sir & Faculty</div>
+              </div>
+            </div>
+            <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-turf-500 text-stadium-950 uppercase tracking-wider">
+              TEAMS READY
             </span>
           </div>
-        )}
 
-        <button
-          onClick={() => handleMakeTeams()}
-          disabled={selectedPlayerIds.length < 4}
-          className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-turf-500 via-turf-600 to-emerald-600 text-stadium-950 font-black text-lg tracking-wider shadow-xl shadow-turf-500/20 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-40 flex items-center justify-center space-x-2"
-        >
-          <Play className="w-5 h-5 fill-current" />
-          <span>MAKE TEAMS FOR MATCH {activeMatchNumber}</span>
-        </button>
-      </div>
-
-      {/* GENERATED MATCH TEAMS & CONTROLS */}
-      {currentMatch && currentMatch.teamA && currentMatch.teamB && (
-        <div className="space-y-6 animate-fade-in">
+          {/* Quick Match Action Bar */}
           <div className="bg-stadium-900 border border-stadium-800 rounded-2xl p-2.5 flex items-center justify-between gap-1 text-xs">
             <button
               onClick={handleToggleLock}
@@ -704,6 +703,103 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
             limitations={currentMatch.limitations}
           />
 
+          {/* COLLAPSIBLE GROUND CHECK-IN / ATTENDANCE SECTION */}
+          <div className="bg-stadium-900 border border-stadium-800 rounded-3xl overflow-hidden shadow-lg mt-6">
+            <button
+              onClick={() => setIsPlayerSelectorExpanded(!isPlayerSelectorExpanded)}
+              className="w-full p-4 flex items-center justify-between text-left hover:bg-stadium-850 transition-colors"
+            >
+              <div className="flex items-center space-x-2">
+                <UserCheck className="w-5 h-5 text-turf-400" />
+                <div>
+                  <div className="text-sm font-extrabold text-white">
+                    Ground Check-in & Attendance ({selectedPlayerIds.length} Present)
+                  </div>
+                  <div className="text-[10px] text-stadium-400 font-semibold uppercase tracking-wider">
+                    {isPlayerSelectorExpanded
+                      ? 'Click to hide player selection list'
+                      : 'Click to edit present players or re-generate teams'}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center space-x-1 text-xs font-black text-turf-400 bg-stadium-800 px-3 py-1.5 rounded-xl border border-stadium-700">
+                <span>{isPlayerSelectorExpanded ? 'HIDE' : 'EDIT PLAYERS'}</span>
+                {isPlayerSelectorExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
+            </button>
+
+            {isPlayerSelectorExpanded && (
+              <div className="p-4 pt-2 border-t border-stadium-800/60 space-y-3">
+                <PlayerSelector
+                  players={players}
+                  selectedIds={selectedPlayerIds}
+                  onTogglePlayer={handleTogglePlayer}
+                  onSelectAll={handleSelectAll}
+                  onClearAll={handleClearAll}
+                  onSelectYesterday={handleSelectYesterday}
+                />
+
+                {selectedPlayerIds.length % 2 !== 0 && selectedPlayerIds.length >= 5 && (
+                  <div className="bg-stadium-900/60 border border-stadium-800 rounded-2xl p-3 flex items-center justify-between text-xs">
+                    <span className="text-stadium-300">
+                      Odd player count ({selectedPlayerIds.length}): Vasu plays on both sides (Joker)
+                    </span>
+                    <span className="text-[10px] font-black text-gold-400 bg-gold-500/20 px-2 py-0.5 rounded-lg border border-gold-500/40">
+                      EXTRA PLAYER AUTO-ON
+                    </span>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => handleMakeTeams()}
+                  disabled={selectedPlayerIds.length < 4}
+                  className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-turf-500 via-turf-600 to-emerald-600 text-stadium-950 font-black text-base tracking-wider shadow-lg hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-40 flex items-center justify-center space-x-2"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>RE-GENERATE TEAMS FOR MATCH {activeMatchNumber} ({selectedPlayerIds.length} PLAYERS)</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* NO TEAMS GENERATED YET - EXPANDED GROUND CHECK-IN PRIMARY VIEW */
+        <div className="space-y-3">
+          <div className="bg-turf-500/10 border border-turf-500/30 rounded-2xl p-3 text-center text-xs text-turf-300 font-bold">
+            🏏 Select present players on the ground below and tap MAKE TEAMS to generate Match {activeMatchNumber}.
+          </div>
+
+          <PlayerSelector
+            players={players}
+            selectedIds={selectedPlayerIds}
+            onTogglePlayer={handleTogglePlayer}
+            onSelectAll={handleSelectAll}
+            onClearAll={handleClearAll}
+            onSelectYesterday={handleSelectYesterday}
+          />
+
+          {selectedPlayerIds.length % 2 !== 0 && selectedPlayerIds.length >= 5 && (
+            <div className="bg-stadium-900/60 border border-stadium-800 rounded-2xl p-3 flex items-center justify-between text-xs">
+              <span className="text-stadium-300">
+                Odd player count ({selectedPlayerIds.length}): Vasu plays on both sides (Joker)
+              </span>
+              <span className="text-[10px] font-black text-gold-400 bg-gold-500/20 px-2 py-0.5 rounded-lg border border-gold-500/40">
+                EXTRA PLAYER AUTO-ON
+              </span>
+            </div>
+          )}
+
+          <button
+            onClick={() => handleMakeTeams()}
+            disabled={selectedPlayerIds.length < 4}
+            className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-turf-500 via-turf-600 to-emerald-600 text-stadium-950 font-black text-lg tracking-wider shadow-xl shadow-turf-500/20 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-40 flex items-center justify-center space-x-2"
+          >
+            <Play className="w-5 h-5 fill-current" />
+            <span>MAKE TEAMS FOR MATCH {activeMatchNumber}</span>
+          </button>
+        </div>
+      )}
+
           {/* TOSS SECTION */}
           <div className="pt-4 border-t border-stadium-800 space-y-2">
             <div className="text-xs font-bold text-stadium-400 uppercase tracking-wider px-1">
@@ -736,7 +832,7 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
               {/* Team Scores Input Boxes */}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="bg-stadium-900 p-3 rounded-2xl border border-turf-500/30 space-y-2">
-                  <span className="font-extrabold text-turf-400 block truncate">{currentMatch.teamA.name} Score</span>
+                  <span className="font-extrabold text-turf-400 block truncate">{currentMatch?.teamA?.name || 'Team A'} Score</span>
                   <div className="flex items-center space-x-1.5">
                     <input
                       type="number"
@@ -757,7 +853,7 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
                 </div>
 
                 <div className="bg-stadium-900 p-3 rounded-2xl border border-gold-500/30 space-y-2">
-                  <span className="font-extrabold text-gold-400 block truncate">{currentMatch.teamB.name} Score</span>
+                  <span className="font-extrabold text-gold-400 block truncate">{currentMatch?.teamB?.name || 'Team B'} Score</span>
                   <div className="flex items-center space-x-1.5">
                     <input
                       type="number"
@@ -790,7 +886,7 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
                         : 'bg-stadium-950 border-stadium-800 text-stadium-300 hover:border-stadium-700'
                     }`}
                   >
-                    {currentMatch.teamA.name}
+                    {currentMatch?.teamA?.name || 'Team A'}
                   </button>
 
                   <button
@@ -801,7 +897,7 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
                         : 'bg-stadium-950 border-stadium-800 text-stadium-300 hover:border-stadium-700'
                     }`}
                   >
-                    {currentMatch.teamB.name}
+                    {currentMatch?.teamB?.name || 'Team B'}
                   </button>
 
                   <button
@@ -860,9 +956,9 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
                         <div className="flex items-center justify-between">
                           <span className="font-extrabold text-white">{player.name}</span>
                           <span className="text-[10px] text-stadium-400 font-bold">
-                            {currentMatch.teamA?.players.some((p) => p.id === player.id)
-                              ? currentMatch.teamA.name
-                              : currentMatch.teamB?.name}
+                            {currentMatch?.teamA?.players.some((p) => p.id === player.id)
+                              ? currentMatch?.teamA?.name
+                              : currentMatch?.teamB?.name}
                           </span>
                         </div>
 
@@ -923,8 +1019,6 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
               )}
             </div>
           </div>
-        </div>
-      )}
 
       {/* PRINTABLE / SHAREABLE MATCH CARD MODAL */}
       {currentMatch && (

@@ -199,9 +199,13 @@ export const Home: React.FC<HomeProps> = ({
               <Play className="w-7 h-7 fill-current" />
             </div>
             <div className="text-left">
-              <div className="leading-none text-xl">MAKE TEAMS</div>
+              <div className="leading-none text-xl">
+                {match1?.teamA && match1?.teamB ? "VIEW TODAY'S TEAMS" : "MAKE TEAMS"}
+              </div>
               <div className="text-[11px] font-bold text-stadium-950/80 mt-1 uppercase tracking-wide">
-                Auto Balance {selectedPlayerIds.length} Players
+                {match1?.teamA && match1?.teamB
+                  ? `Match 1 Ready • ${selectedPlayerIds.length} Players`
+                  : `Auto Balance ${selectedPlayerIds.length} Players`}
               </div>
             </div>
           </div>
@@ -233,25 +237,45 @@ export const Home: React.FC<HomeProps> = ({
         {match1 && match1.teamA && match1.teamB ? (
           <div
             onClick={() => onNavigate('today')}
-            className="bg-stadium-900 border border-turf-500/40 hover:border-turf-400 rounded-3xl p-4 cursor-pointer transition-all space-y-2 shadow-lg"
+            className="bg-stadium-900 border border-turf-500/40 hover:border-turf-400 rounded-3xl p-5 cursor-pointer transition-all space-y-3 shadow-xl"
           >
             <div className="flex items-center justify-between text-xs">
-              <span className="text-turf-400 font-black uppercase tracking-wider">
-                🏏 MATCH 1
+              <span className="text-turf-400 font-black uppercase tracking-wider flex items-center space-x-1.5">
+                <span>🏏 MATCH 1 TEAMS READY</span>
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-turf-500/20 text-turf-400 font-bold border border-turf-500/30">
+              <span className="text-[10px] px-2.5 py-1 rounded-full bg-turf-500/20 text-turf-400 font-bold border border-turf-500/40">
                 {match1.isLocked ? 'LOCKED' : 'TEAMS READY'}
               </span>
             </div>
 
-            <div className="flex items-center justify-around py-2 border-y border-stadium-800 text-sm font-black">
-              <span className="text-turf-400 truncate max-w-[40%] text-center">{match1.teamA.name}</span>
-              <span className="text-xs text-stadium-400 font-mono font-extrabold">VS</span>
-              <span className="text-gold-400 truncate max-w-[40%] text-center">{match1.teamB.name}</span>
+            <div className="flex items-center justify-around py-3 border-y border-stadium-800 text-base font-black">
+              <div className="text-center">
+                <div className="text-turf-400">{match1.teamA.name}</div>
+                <div className="text-[10px] text-stadium-400 font-semibold mt-0.5">
+                  Capt: {match1.teamA.captainName} ({match1.teamA.players.length} p)
+                </div>
+              </div>
+              <span className="text-xs text-stadium-500 font-mono font-extrabold px-2">VS</span>
+              <div className="text-center">
+                <div className="text-gold-400">{match1.teamB.name}</div>
+                <div className="text-[10px] text-stadium-400 font-semibold mt-0.5">
+                  Capt: {match1.teamB.captainName} ({match1.teamB.players.length} p)
+                </div>
+              </div>
             </div>
 
-            <div className="text-[11px] text-center text-stadium-300 font-bold">
-              Tap to view Match 1 details or live scorecard →
+            {match1.joker && (
+              <div className="text-[10px] text-center text-gold-300 font-bold bg-gold-500/10 py-1 px-2 rounded-lg border border-gold-500/20">
+                🃏 Joker Player: {match1.joker.name} (Plays on both sides)
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[10px] text-stadium-400 font-medium">Live Synced for all users & devices</span>
+              <span className="text-xs font-black text-turf-400 flex items-center space-x-1">
+                <span>View Today's Teams</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </span>
             </div>
           </div>
         ) : (

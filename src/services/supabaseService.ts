@@ -148,7 +148,24 @@ export function subscribeToMatchUpdates(
     broadcastChannel.addEventListener('message', handleBroadcast);
   }
 
-  // 2. Supabase Realtime Subscription
+  // 2. Listen to storage events (cross-window/tab sync on same origin)
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === 'cricmasters_current_match' && event.newValue) {
+      try {
+        const match = JSON.parse(event.newValue) as MatchSession;
+        if (match && match.date === date) {
+          onMatchReceived(match);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', handleStorage);
+  }
+
+  // 3. Supabase Realtime Subscription
   const client = getSupabaseClient();
   let supabaseSubscription: any = null;
 
@@ -182,6 +199,9 @@ export function subscribeToMatchUpdates(
   return () => {
     if (broadcastChannel) {
       broadcastChannel.removeEventListener('message', handleBroadcast);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', handleStorage);
     }
     if (supabaseSubscription && client) {
       client.removeChannel(supabaseSubscription);
