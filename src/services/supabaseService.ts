@@ -143,6 +143,12 @@ DO $$ BEGIN
 END $$;
 `;
 
+export const DEFAULT_SUPABASE_CONFIG = {
+  url: 'https://ztcnsuddrezydwuzafpb.supabase.co',
+  anonKey:
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Y25zdWRkcmV6eWR3dXphZnBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE1NDk3OTYsImV4cCI6MjEwNzEyNTc5Nn0.YbT06fZCLcshhUlHgHXK99RccA32kMFAek00RQNZnL8',
+};
+
 let supabaseClient: SupabaseClient | null = null;
 let lastConfigUrl: string | null = null;
 let lastConfigKey: string | null = null;
@@ -154,11 +160,17 @@ const broadcastChannel: BroadcastChannel | null =
 
 export function getSupabaseClient(): SupabaseClient | null {
   const settings = getAppSettings();
-  const url = (import.meta.env.VITE_SUPABASE_URL || settings.supabaseUrl || '').trim();
+  const url = (
+    import.meta.env.VITE_SUPABASE_URL ||
+    settings.supabaseUrl ||
+    DEFAULT_SUPABASE_CONFIG.url ||
+    ''
+  ).trim();
   const key = (
     import.meta.env.VITE_SUPABASE_ANON_KEY ||
     import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
     settings.supabaseAnonKey ||
+    DEFAULT_SUPABASE_CONFIG.anonKey ||
     ''
   ).trim();
 

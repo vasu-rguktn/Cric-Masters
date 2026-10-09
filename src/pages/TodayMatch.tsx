@@ -100,17 +100,19 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
       try {
         const cloudMatches = await fetchTodayMatchesFromSupabase(todayStr);
         if (cloudMatches && cloudMatches.length > 0) {
-          const cloudM1 = cloudMatches.find((m) => m.matchNumber === 1) || null;
-          const cloudM2 = cloudMatches.find((m) => m.matchNumber === 2) || null;
+          const cloudM1 =
+            cloudMatches.find((m) => m.matchNumber === 1 || !m.matchNumber) || cloudMatches[0] || null;
+          const cloudM2 =
+            cloudMatches.find((m) => m.matchNumber === 2) || null;
 
           if (cloudM1) {
-            if (!m1 || new Date(cloudM1.updatedAt) > new Date(m1.updatedAt)) {
+            if (!m1 || !m1.teamA || new Date(cloudM1.updatedAt) >= new Date(m1.updatedAt)) {
               m1 = cloudM1;
               saveMatchToHistory(cloudM1);
             }
           }
           if (cloudM2) {
-            if (!m2 || new Date(cloudM2.updatedAt) > new Date(m2.updatedAt)) {
+            if (!m2 || !m2.teamA || new Date(cloudM2.updatedAt) >= new Date(m2.updatedAt)) {
               m2 = cloudM2;
               saveMatchToHistory(cloudM2);
             }

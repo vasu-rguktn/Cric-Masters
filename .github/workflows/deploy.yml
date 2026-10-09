@@ -36,6 +36,9 @@ jobs:
 
       - name: Build Application
         run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://ztcnsuddrezydwuzafpb.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Y25zdWRkcmV6eWR3dXphZnBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE1NDk3OTYsImV4cCI6MjEwNzEyNTc5Nn0.YbT06fZCLcshhUlHgHXK99RccA32kMFAek00RQNZnL8' }}
 
       - name: Upload GitHub Pages Artifact
         uses: actions/upload-pages-artifact@v3

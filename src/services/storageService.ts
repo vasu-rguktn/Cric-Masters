@@ -16,7 +16,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxTossStreak: 2,
   repetitionPenaltyWeight: 5,
   historyWindowSize: 5,
-  enableSupabase: false,
+  enableSupabase: true,
+  supabaseUrl: 'https://ztcnsuddrezydwuzafpb.supabase.co',
+  supabaseAnonKey:
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Y25zdWRkcmV6eWR3dXphZnBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE1NDk3OTYsImV4cCI6MjEwNzEyNTc5Nn0.YbT06fZCLcshhUlHgHXK99RccA32kMFAek00RQNZnL8',
 };
 
 export function getStoredPlayers(): Player[] {

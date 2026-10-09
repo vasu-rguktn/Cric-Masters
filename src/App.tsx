@@ -10,7 +10,9 @@ import {
 } from './services/storageService';
 import {
   fetchAllPlayersFromSupabase,
+  fetchTodayMatchesFromSupabase,
   subscribeToPlayersUpdates,
+  subscribeToMatchUpdates,
   isSupabaseAvailable,
 } from './services/supabaseService';
 import { decodeMatchFromUrl } from './utils/sharing';
@@ -40,17 +42,37 @@ export function App() {
     return players.filter((p) => p.isActive && p.isRegular).map((p) => p.id);
   });
 
-  // Sync players from Supabase on startup and subscribe to realtime updates
+  // Sync players and matches from Supabase on startup and subscribe to realtime updates
   useEffect(() => {
     let isMounted = true;
+    const todayStr = getTodayIsoDate();
 
-    async function syncCloudPlayers() {
+    async function syncCloudData() {
       if (isSupabaseAvailable()) {
         try {
-          const cloudPlayers = await fetchAllPlayersFromSupabase();
-          if (isMounted && cloudPlayers.length > 0) {
+          const [cloudPlayers, cloudMatches] = await Promise.all([
+            fetchAllPlayersFromSupabase(),
+            fetchTodayMatchesFromSupabase(todayStr),
+          ]);
+
+          if (isMounted && cloudPlayers && cloudPlayers.length > 0) {
             setPlayers(cloudPlayers);
             saveStoredPlayers(cloudPlayers);
+          }
+
+          if (isMounted && cloudMatches && cloudMatches.length > 0) {
+            const m1 =
+              cloudMatches.find(
+                (m: MatchSession) => m.matchNumber === 1 || !m.matchNumber
+              ) || cloudMatches[0];
+            if (m1) {
+              setCurrentMatch(m1);
+              saveCurrentMatch(m1);
+              saveMatchToHistory(m1);
+              if (m1.availablePlayerIds && m1.availablePlayerIds.length > 0) {
+                setSelectedPlayerIds(m1.availablePlayerIds);
+              }
+            }
           }
         } catch (e) {
           // fallback to stored
@@ -58,18 +80,30 @@ export function App() {
       }
     }
 
-    syncCloudPlayers();
+    syncCloudData();
 
-    const unsubscribe = subscribeToPlayersUpdates((cloudPlayers) => {
+    const unsubPlayers = subscribeToPlayersUpdates((cloudPlayers) => {
       if (isMounted && cloudPlayers && cloudPlayers.length > 0) {
         setPlayers(cloudPlayers);
         saveStoredPlayers(cloudPlayers);
       }
     });
 
+    const unsubMatches = subscribeToMatchUpdates(todayStr, (updatedMatch: MatchSession) => {
+      if (isMounted && updatedMatch) {
+        saveCurrentMatch(updatedMatch);
+        saveMatchToHistory(updatedMatch);
+        setCurrentMatch(updatedMatch);
+        if (updatedMatch.availablePlayerIds && updatedMatch.availablePlayerIds.length > 0) {
+          setSelectedPlayerIds(updatedMatch.availablePlayerIds);
+        }
+      }
+    });
+
     return () => {
       isMounted = false;
-      unsubscribe();
+      unsubPlayers();
+      unsubMatches();
     };
   }, []);
 

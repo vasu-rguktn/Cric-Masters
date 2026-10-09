@@ -4,7 +4,7 @@ import type { MatchSession } from '../types/match';
 import { TossCoin } from '../components/TossCoin';
 import { Users, Play, Calendar, ArrowRight, ShieldCheck, Clock, Star, Target } from 'lucide-react';
 import { getTodayIsoDate } from '../utils/dates';
-import { getMatchHistory, getTodayMatchesByDate } from '../services/storageService';
+import { getMatchHistory, getTodayMatchesByDate, saveMatchToHistory } from '../services/storageService';
 import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates } from '../services/supabaseService';
 
 interface HomeProps {
@@ -45,10 +45,18 @@ export const Home: React.FC<HomeProps> = ({
     try {
       const cloudMatches = await fetchTodayMatchesFromSupabase(todayStr);
       if (cloudMatches && cloudMatches.length > 0) {
-        const cloudM1 = cloudMatches.find((m) => m.matchNumber === 1);
+        const cloudM1 =
+          cloudMatches.find((m) => m.matchNumber === 1 || !m.matchNumber) ||
+          cloudMatches[0];
         const cloudM2 = cloudMatches.find((m) => m.matchNumber === 2);
-        if (cloudM1) m1 = cloudM1;
-        if (cloudM2) m2 = cloudM2;
+        if (cloudM1) {
+          m1 = cloudM1;
+          saveMatchToHistory(cloudM1);
+        }
+        if (cloudM2) {
+          m2 = cloudM2;
+          saveMatchToHistory(cloudM2);
+        }
       }
     } catch (e) {
       // use local
