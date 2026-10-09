@@ -1,7 +1,19 @@
 import { useState, useEffect } from 'react';
 import type { Player } from './types/player';
 import type { MatchSession } from './types/match';
-import { getStoredPlayers, getCurrentMatch } from './services/storageService';
+import {
+  getStoredPlayers,
+  saveStoredPlayers,
+  getCurrentMatch,
+  saveCurrentMatch,
+  saveMatchToHistory,
+} from './services/storageService';
+import {
+  fetchAllPlayersFromSupabase,
+  subscribeToPlayersUpdates,
+  isSupabaseAvailable,
+} from './services/supabaseService';
+import { decodeMatchFromUrl } from './utils/sharing';
 import { Navigation } from './components/Navigation';
 import type { NavTab } from './components/Navigation';
 import { Home } from './pages/Home';
@@ -24,10 +36,42 @@ export function App() {
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(() => {
     if (currentMatch?.availablePlayerIds && currentMatch.availablePlayerIds.length > 0) {
       return currentMatch.availablePlayerIds;
-
     }
     return players.filter((p) => p.isActive && p.isRegular).map((p) => p.id);
   });
+
+  // Sync players from Supabase on startup and subscribe to realtime updates
+  useEffect(() => {
+    let isMounted = true;
+
+    async function syncCloudPlayers() {
+      if (isSupabaseAvailable()) {
+        try {
+          const cloudPlayers = await fetchAllPlayersFromSupabase();
+          if (isMounted && cloudPlayers.length > 0) {
+            setPlayers(cloudPlayers);
+            saveStoredPlayers(cloudPlayers);
+          }
+        } catch (e) {
+          // fallback to stored
+        }
+      }
+    }
+
+    syncCloudPlayers();
+
+    const unsubscribe = subscribeToPlayersUpdates((cloudPlayers) => {
+      if (isMounted && cloudPlayers && cloudPlayers.length > 0) {
+        setPlayers(cloudPlayers);
+        saveStoredPlayers(cloudPlayers);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -46,6 +90,25 @@ export function App() {
   };
 
   useEffect(() => {
+    // 1. Check for URL shared match parameter (e.g. ?m=... or ?match=...)
+    if (typeof window !== 'undefined' && window.location.search) {
+      const searchParams = new URLSearchParams(window.location.search);
+      const sharedParam = searchParams.get('m') || searchParams.get('match');
+      if (sharedParam) {
+        const decodedMatch = decodeMatchFromUrl(sharedParam);
+        if (decodedMatch) {
+          setCurrentMatch(decodedMatch);
+          saveCurrentMatch(decodedMatch);
+          saveMatchToHistory(decodedMatch);
+          if (decodedMatch.availablePlayerIds && decodedMatch.availablePlayerIds.length > 0) {
+            setSelectedPlayerIds(decodedMatch.availablePlayerIds);
+          }
+          window.history.replaceState({}, document.title, window.location.pathname);
+          return;
+        }
+      }
+    }
+
     if (!currentMatch) {
       const todayStr = getTodayIsoDate();
       const initialMatch: MatchSession = {

@@ -13,6 +13,7 @@ export interface Player {
   roles: PlayerRole[];
   isRegular: boolean;
   isActive: boolean;
+  avatarUrl?: string;
   rating?: number; // Optional numerical rating for advanced tuning
   createdAt: string;
 }

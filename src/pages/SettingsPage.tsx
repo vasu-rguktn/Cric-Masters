@@ -1,8 +1,51 @@
 import React, { useState } from 'react';
 import type { AppSettings } from '../types/settings';
-import { getAppSettings, saveAppSettings, exportAllData, importAllData, resetAllData } from '../services/storageService';
-import { isSupabaseAvailable } from '../services/supabaseService';
-import { Settings, Download, Upload, Trash2, Database, CheckCircle2, Lock, UserCheck, LogOut, ShieldAlert, Sun, Moon } from 'lucide-react';
+import {
+  getAppSettings,
+  saveAppSettings,
+  exportAllData,
+  importAllData,
+  resetAllData,
+  getStoredPlayers,
+  saveStoredPlayers,
+  getMatchHistory,
+  saveMatchToHistory,
+  getTossHistory,
+  saveTossRecord,
+} from '../services/storageService';
+import {
+  isSupabaseAvailable,
+  testSupabaseConnection,
+  SUPABASE_SCHEMA_SQL,
+  syncPlayersToSupabase,
+  syncMatchToSupabase,
+  syncTossRecordToSupabase,
+  fetchAllPlayersFromSupabase,
+  fetchMatchHistoryFromSupabase,
+  fetchTossHistoryFromSupabase,
+  SUPABASE_MEDIA_BUCKET,
+} from '../services/supabaseService';
+import {
+  Settings,
+  Download,
+  Upload,
+  Trash2,
+  Database,
+  CheckCircle2,
+  Lock,
+  UserCheck,
+  LogOut,
+  ShieldAlert,
+  Sun,
+  Moon,
+  Copy,
+  Check,
+  CloudUpload,
+  CloudDownload,
+  Activity,
+  Code,
+  AlertCircle,
+} from 'lucide-react';
 
 const AUTH_KEY = 'cricmasters_auth_vasu';
 
@@ -25,7 +68,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ theme = 'dark', onTo
   const [supabaseKeyInput, setSupabaseKeyInput] = useState<string>(settings.supabaseAnonKey || '');
   const [importInput, setImportInput] = useState<string>('');
   const [showImportArea, setShowImportArea] = useState<boolean>(false);
+  const [showSqlViewer, setShowSqlViewer] = useState<boolean>(false);
+  const [sqlCopied, setSqlCopied] = useState<boolean>(false);
+
   const [message, setMessage] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+    tables?: { players: boolean; daily_matches: boolean; toss_history: boolean; storage: boolean };
+  } | null>(null);
+  const [isTesting, setIsTesting] = useState<boolean>(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,11 +103,103 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ theme = 'dark', onTo
       ...settings,
       supabaseUrl: supabaseUrlInput.trim() || undefined,
       supabaseAnonKey: supabaseKeyInput.trim() || undefined,
+      enableSupabase: Boolean(supabaseUrlInput.trim() && supabaseKeyInput.trim()),
     };
     setSettings(updated);
     saveAppSettings(updated);
     setMessage('Settings saved successfully!');
     setTimeout(() => setMessage(null), 3000);
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+
+    // Save first to update client
+    handleSaveSettings();
+
+    const result = await testSupabaseConnection();
+    setTestResult(result);
+    setIsTesting(false);
+  };
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
+    setSqlCopied(true);
+    setTimeout(() => setSqlCopied(false), 3000);
+  };
+
+  const handlePushAllToCloud = async () => {
+    if (!isSupabaseAvailable()) {
+      alert('Please configure Supabase URL & Anon Key first and click Save.');
+      return;
+    }
+
+    setIsSyncingCloud(true);
+    try {
+      const localPlayers = getStoredPlayers();
+      const localMatches = getMatchHistory();
+      const localTosses = getTossHistory();
+
+      let playersOk = false;
+      let matchesOk = 0;
+      let tossesOk = 0;
+
+      if (localPlayers.length > 0) {
+        playersOk = await syncPlayersToSupabase(localPlayers);
+      }
+
+      for (const m of localMatches) {
+        const ok = await syncMatchToSupabase(m);
+        if (ok) matchesOk++;
+      }
+
+      for (const t of localTosses) {
+        const ok = await syncTossRecordToSupabase(t);
+        if (ok) tossesOk++;
+      }
+
+      alert(
+        `Cloud Push Complete!\n• ${playersOk ? localPlayers.length : 0} Players synced\n• ${matchesOk} Matches synced\n• ${tossesOk} Tosses synced`
+      );
+    } catch (e: any) {
+      alert(`Push failed: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
+  const handlePullAllFromCloud = async () => {
+    if (!isSupabaseAvailable()) {
+      alert('Please configure Supabase URL & Anon Key first.');
+      return;
+    }
+
+    setIsSyncingCloud(true);
+    try {
+      const cloudPlayers = await fetchAllPlayersFromSupabase();
+      const cloudMatches = await fetchMatchHistoryFromSupabase(100);
+      const cloudTosses = await fetchTossHistoryFromSupabase(50);
+
+      if (cloudPlayers.length > 0) {
+        saveStoredPlayers(cloudPlayers);
+      }
+      for (const m of cloudMatches) {
+        saveMatchToHistory(m);
+      }
+      for (const t of cloudTosses) {
+        saveTossRecord(t);
+      }
+
+      alert(
+        `Cloud Pull Complete!\n• ${cloudPlayers.length} Players updated\n• ${cloudMatches.length} Matches loaded\n• ${cloudTosses.length} Tosses loaded\n\nPage will now refresh.`
+      );
+      window.location.reload();
+    } catch (e: any) {
+      alert(`Pull failed: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setIsSyncingCloud(false);
+    }
   };
 
   const handleExport = () => {
@@ -174,7 +319,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ theme = 'dark', onTo
         <div>
           <h2 className="text-lg font-black text-white flex items-center space-x-2">
             <Settings className="w-5 h-5 text-turf-400" />
-            <span>APP SETTINGS & BACKUP</span>
+            <span>APP SETTINGS & CLOUD DB</span>
           </h2>
           <div className="text-[10px] text-turf-400 font-bold uppercase tracking-wider mt-0.5 flex items-center space-x-1">
             <UserCheck className="w-3 h-3" />
@@ -235,6 +380,198 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ theme = 'dark', onTo
         </div>
       </div>
 
+      {/* SUPABASE CLOUD DATABASE INTEGRATION */}
+      <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-5 space-y-4 shadow-lg">
+        <div className="flex items-center justify-between border-b border-stadium-800 pb-2">
+          <div className="flex items-center space-x-2">
+            <Database className="w-5 h-5 text-turf-400" />
+            <div>
+              <span className="text-xs font-bold text-white uppercase tracking-wider block">
+                Supabase Cloud Database & Storage
+              </span>
+              <span className="text-[10px] text-stadium-400">
+                Syncs matches, scores & teams to all phones
+              </span>
+            </div>
+          </div>
+          <span
+            className={`px-2.5 py-1 rounded-full text-[10px] font-bold border flex items-center space-x-1 ${
+              isCloudConnected
+                ? 'bg-turf-500/20 text-turf-400 border-turf-500/40'
+                : 'bg-stadium-800 text-stadium-500 border-stadium-700'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isCloudConnected ? 'bg-turf-400 animate-pulse' : 'bg-stadium-600'
+              }`}
+            />
+            <span>{isCloudConnected ? 'Live Cloud' : 'Offline Mode'}</span>
+          </span>
+        </div>
+
+        {/* STEP 1: SQL SCHEMA SETUP */}
+        <div className="bg-stadium-950/80 border border-stadium-800 rounded-2xl p-3.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-1.5 text-xs font-bold text-gold-400">
+              <Code className="w-4 h-4" />
+              <span>Step 1: Database & Storage SQL Schema</span>
+            </div>
+            <button
+              onClick={handleCopySql}
+              className="px-2.5 py-1 bg-gold-500/20 hover:bg-gold-500/30 text-gold-300 rounded-lg text-[11px] font-bold border border-gold-500/40 flex items-center space-x-1 transition-all"
+            >
+              {sqlCopied ? <Check className="w-3.5 h-3.5 text-turf-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{sqlCopied ? 'SQL Copied!' : 'Copy SQL Script'}</span>
+            </button>
+          </div>
+          <p className="text-[11px] text-stadium-400 leading-relaxed">
+            Run this in your <strong className="text-white">Supabase Dashboard → SQL Editor</strong> to create tables (<code>players</code>, <code>daily_matches</code>, <code>toss_history</code>), enable Realtime sync, and setup the <code>{SUPABASE_MEDIA_BUCKET}</code> storage bucket.
+          </p>
+
+          <button
+            onClick={() => setShowSqlViewer(!showSqlViewer)}
+            className="text-[10px] text-turf-400 font-bold hover:underline flex items-center space-x-1"
+          >
+            <span>{showSqlViewer ? 'Hide SQL Code' : 'View SQL Code Preview'}</span>
+          </button>
+
+          {showSqlViewer && (
+            <textarea
+              readOnly
+              rows={8}
+              value={SUPABASE_SCHEMA_SQL}
+              className="w-full bg-stadium-900 border border-stadium-700 rounded-xl p-2.5 text-[10px] text-stadium-200 font-mono focus:outline-none"
+            />
+          )}
+        </div>
+
+        {/* STEP 2: CREDENTIALS */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs font-bold text-stadium-300">
+            <span>Step 2: Enter Supabase Credentials</span>
+            <span className="text-[10px] text-stadium-400 font-normal">Dashboard → Project Settings → API</span>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-stadium-400 block mb-1">
+              Project URL (VITE_SUPABASE_URL)
+            </label>
+            <input
+              type="text"
+              placeholder="https://your-project-id.supabase.co"
+              value={supabaseUrlInput}
+              onChange={(e) => setSupabaseUrlInput(e.target.value)}
+              className="w-full bg-stadium-950 border border-stadium-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-turf-400 font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-stadium-400 block mb-1">
+              Anon Public Key (VITE_SUPABASE_ANON_KEY)
+            </label>
+            <input
+              type="password"
+              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              value={supabaseKeyInput}
+              onChange={(e) => setSupabaseKeyInput(e.target.value)}
+              className="w-full bg-stadium-950 border border-stadium-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-turf-400 font-mono"
+            />
+          </div>
+        </div>
+
+        {/* ACTIONS: SAVE & TEST */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            onClick={handleSaveSettings}
+            className="py-2.5 bg-turf-500 hover:bg-turf-600 text-stadium-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center space-x-1.5"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Save Cloud Keys</span>
+          </button>
+
+          <button
+            onClick={handleTestConnection}
+            disabled={isTesting}
+            className="py-2.5 bg-stadium-800 hover:bg-stadium-700 text-stadium-100 font-bold text-xs rounded-xl border border-stadium-700 transition-all flex items-center justify-center space-x-1.5 disabled:opacity-50"
+          >
+            <Activity className={`w-4 h-4 text-gold-400 ${isTesting ? 'animate-spin' : ''}`} />
+            <span>{isTesting ? 'Testing...' : 'Test Connection'}</span>
+          </button>
+        </div>
+
+        {/* TEST RESULTS BOX */}
+        {testResult && (
+          <div
+            className={`p-3.5 rounded-2xl border text-xs space-y-2 animate-fade-in ${
+              testResult.success
+                ? 'bg-turf-500/10 border-turf-500/30 text-turf-200'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+            }`}
+          >
+            <div className="flex items-center space-x-2 font-bold">
+              {testResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-turf-400 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              )}
+              <span>{testResult.message}</span>
+            </div>
+
+            {testResult.tables && (
+              <div className="grid grid-cols-2 gap-1.5 text-[10px] pt-1">
+                <div className="flex items-center space-x-1">
+                  <span>{testResult.tables.players ? '✅' : '❌'}</span>
+                  <span>players table</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <span>{testResult.tables.daily_matches ? '✅' : '❌'}</span>
+                  <span>daily_matches table</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <span>{testResult.tables.toss_history ? '✅' : '❌'}</span>
+                  <span>toss_history table</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <span>{testResult.tables.storage ? '✅' : '⚠️'}</span>
+                  <span>media storage bucket</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 3: DATA SYNC (PUSH / PULL) */}
+        <div className="border-t border-stadium-800 pt-3 space-y-2">
+          <div className="text-xs font-bold text-stadium-300">
+            Step 3: Sync Local Data with Cloud
+          </div>
+          <p className="text-[10px] text-stadium-400">
+            Push your local players and match history to Supabase so other phones can see them immediately, or pull cloud data to this device.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={handlePushAllToCloud}
+              disabled={isSyncingCloud}
+              className="py-2.5 bg-stadium-800 hover:bg-turf-950/40 hover:border-turf-500/40 text-stadium-200 hover:text-turf-300 rounded-xl text-xs font-bold border border-stadium-700 flex items-center justify-center space-x-1.5 transition-all disabled:opacity-50"
+            >
+              <CloudUpload className="w-4 h-4 text-turf-400" />
+              <span>Push to Cloud</span>
+            </button>
+
+            <button
+              onClick={handlePullAllFromCloud}
+              disabled={isSyncingCloud}
+              className="py-2.5 bg-stadium-800 hover:bg-gold-950/40 hover:border-gold-500/40 text-stadium-200 hover:text-gold-300 rounded-xl text-xs font-bold border border-stadium-700 flex items-center justify-center space-x-1.5 transition-all disabled:opacity-50"
+            >
+              <CloudDownload className="w-4 h-4 text-gold-400" />
+              <span>Pull from Cloud</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* ALGORITHM SETTINGS */}
       <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-5 space-y-4 shadow-lg">
         <div className="text-xs font-bold text-stadium-300 uppercase tracking-wider border-b border-stadium-800 pb-2">
@@ -288,7 +625,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ theme = 'dark', onTo
       {/* DATA EXPORT & IMPORT */}
       <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-5 space-y-4 shadow-lg">
         <div className="text-xs font-bold text-stadium-300 uppercase tracking-wider border-b border-stadium-800 pb-2">
-          Data Management
+          Offline Backup & Restore (JSON)
         </div>
 
         <div className="grid grid-cols-2 gap-2">
@@ -328,62 +665,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ theme = 'dark', onTo
         )}
       </div>
 
-      {/* SUPABASE CLOUD PERSISTENCE (OPTIONAL) */}
-      <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-5 space-y-4 shadow-lg">
-        <div className="flex items-center justify-between border-b border-stadium-800 pb-2">
-          <div className="flex items-center space-x-2">
-            <Database className="w-4 h-4 text-turf-400" />
-            <span className="text-xs font-bold text-stadium-300 uppercase tracking-wider">
-              Cloud Backup (Supabase)
-            </span>
-          </div>
-          <span
-            className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-              isCloudConnected
-                ? 'bg-turf-500/20 text-turf-400 border-turf-500/40'
-                : 'bg-stadium-800 text-stadium-500 border-stadium-700'
-            }`}
-          >
-            {isCloudConnected ? 'Connected' : 'Offline / Local Only'}
-          </span>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <label className="text-[11px] font-bold text-stadium-400 block mb-1">
-              VITE_SUPABASE_URL
-            </label>
-            <input
-              type="text"
-              placeholder="https://your-project.supabase.co"
-              value={supabaseUrlInput}
-              onChange={(e) => setSupabaseUrlInput(e.target.value)}
-              className="w-full bg-stadium-950 border border-stadium-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-turf-400 font-mono"
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] font-bold text-stadium-400 block mb-1">
-              VITE_SUPABASE_ANON_KEY
-            </label>
-            <input
-              type="password"
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-              value={supabaseKeyInput}
-              onChange={(e) => setSupabaseKeyInput(e.target.value)}
-              className="w-full bg-stadium-950 border border-stadium-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-turf-400 font-mono"
-            />
-          </div>
-        </div>
-
-        <button
-          onClick={handleSaveSettings}
-          className="w-full py-2 bg-stadium-800 hover:bg-stadium-700 text-stadium-200 font-bold text-xs rounded-xl border border-stadium-700"
-        >
-          Save Cloud Keys
-        </button>
-      </div>
-
       {/* DANGER ZONE RESET */}
       <div className="bg-rose-950/20 border border-rose-500/30 rounded-3xl p-5 space-y-3 text-center">
         <div className="text-xs font-bold text-rose-300 uppercase tracking-wider">
@@ -394,7 +675,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ theme = 'dark', onTo
           className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center space-x-1.5"
         >
           <Trash2 className="w-4 h-4" />
-          <span>RESET ALL APPLICATION DATA</span>
+          <span>RESET ALL LOCAL APPLICATION DATA</span>
         </button>
       </div>
     </div>

@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import type { Player, PlayerRole } from '../types/player';
 import { saveStoredPlayers } from '../services/storageService';
-import { syncPlayersToSupabase } from '../services/supabaseService';
-import { Plus, Edit2, Trash2, Star, Users, X, Save } from 'lucide-react';
+import {
+  syncPlayersToSupabase,
+  deletePlayerFromSupabase,
+  uploadPlayerAvatar,
+  isSupabaseAvailable,
+} from '../services/supabaseService';
+import { Plus, Edit2, Trash2, Star, Users, X, Save, Camera, User } from 'lucide-react';
 
 interface PlayersPageProps {
   players: Player[];
@@ -26,11 +31,16 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
   const [nameInput, setNameInput] = useState<string>('');
   const [rolesInput, setRolesInput] = useState<PlayerRole[]>([]);
   const [isRegularInput, setIsRegularInput] = useState<boolean>(true);
+  const [avatarUrlInput, setAvatarUrlInput] = useState<string>('');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resetForm = () => {
     setNameInput('');
     setRolesInput([]);
     setIsRegularInput(true);
+    setAvatarUrlInput('');
     setIsAdding(false);
     setEditingPlayerId(null);
   };
@@ -44,6 +54,7 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
     setNameInput(player.name);
     setRolesInput([...player.roles]);
     setIsRegularInput(player.isRegular);
+    setAvatarUrlInput(player.avatarUrl || '');
     setEditingPlayerId(player.id);
     setIsAdding(false);
   };
@@ -53,6 +64,46 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
       setRolesInput(rolesInput.filter((r) => r !== role));
     } else {
       setRolesInput([...rolesInput, role]);
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!isSupabaseAvailable()) {
+      // Local preview data url
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setAvatarUrlInput(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    try {
+      const pId = editingPlayerId || 'temp_' + Date.now();
+      const ext = file.name.split('.').pop() || 'jpg';
+      const uploadedUrl = await uploadPlayerAvatar(pId, file, ext);
+      if (uploadedUrl) {
+        setAvatarUrlInput(uploadedUrl);
+      } else {
+        // fallback to base64 preview
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            setAvatarUrlInput(reader.result);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    } catch {
+      alert('Photo upload failed. Check Supabase connection and Storage bucket.');
+    } finally {
+      setIsUploadingPhoto(false);
     }
   };
 
@@ -76,6 +127,7 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
               name: nameInput.trim(),
               roles: rolesInput,
               isRegular: isRegularInput,
+              avatarUrl: avatarUrlInput.trim() || undefined,
             }
           : p
       );
@@ -86,6 +138,7 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
         roles: rolesInput,
         isRegular: isRegularInput,
         isActive: true,
+        avatarUrl: avatarUrlInput.trim() || undefined,
         createdAt: new Date().toISOString(),
       };
       updatedList = [...players, newPlayer];
@@ -112,6 +165,7 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
       setPlayers(updated);
       saveStoredPlayers(updated);
       syncPlayersToSupabase(updated);
+      deletePlayerFromSupabase(id);
     }
   };
 
@@ -127,7 +181,7 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
             <span>PLAYER DATABASE</span>
           </h2>
           <p className="text-xs text-stadium-400">
-            {players.filter((p) => p.isActive).length} Active Members
+            {players.filter((p) => p.isActive).length} Active Members • Synced
           </p>
         </div>
 
@@ -144,7 +198,7 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
         <div className="bg-stadium-900 border border-turf-500/40 rounded-3xl p-5 space-y-4 shadow-2xl animate-fade-in">
           <div className="flex items-center justify-between border-b border-stadium-800 pb-2">
             <h3 className="font-extrabold text-white text-sm">
-              {editingPlayerId ? 'Edit Player' : 'Add New Faculty Player'}
+              {editingPlayerId ? 'Edit Player Profile' : 'Add New Faculty Player'}
             </h3>
             <button onClick={resetForm} className="text-stadium-400 hover:text-white">
               <X className="w-4 h-4" />
@@ -152,6 +206,46 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
           </div>
 
           <div className="space-y-3">
+            {/* AVATAR UPLOAD SECTION */}
+            <div className="flex items-center space-x-4 p-3 bg-stadium-950 rounded-2xl border border-stadium-800">
+              <div className="relative">
+                {avatarUrlInput ? (
+                  <img
+                    src={avatarUrlInput}
+                    alt="Player Avatar"
+                    className="w-14 h-14 rounded-full object-cover border-2 border-turf-400 shadow-md"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-full bg-stadium-800 border border-stadium-700 flex items-center justify-center text-stadium-400 font-black text-lg">
+                    {nameInput ? nameInput.charAt(0).toUpperCase() : <User className="w-6 h-6" />}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute bottom-0 right-0 p-1 rounded-full bg-turf-500 text-stadium-950 shadow-md hover:scale-110 transition-transform"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
+              </div>
+
+              <div className="flex-1">
+                <div className="text-xs font-bold text-white">Player Photo (Optional)</div>
+                <div className="text-[10px] text-stadium-400">
+                  {isUploadingPhoto
+                    ? 'Uploading to Supabase Storage...'
+                    : 'Upload photo to display on live scorecard & team cards'}
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className="text-xs font-bold text-stadium-300 block mb-1">
                 Player Name
@@ -240,24 +334,37 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
                 !player.isActive ? 'opacity-40' : ''
               }`}
             >
-              <div>
-                <div className="flex items-center space-x-1.5">
-                  <span className="font-extrabold text-sm text-white">{player.name}</span>
-                  <Star className="w-3 h-3 text-gold-400 fill-gold-400" />
-                </div>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {player.roles.map((r, i) => (
-                    <span
-                      key={i}
-                      className="text-[9px] px-1.5 py-0.5 rounded bg-stadium-950 text-stadium-400 border border-stadium-800 font-medium"
-                    >
-                      {r}
-                    </span>
-                  ))}
+              <div className="flex items-center space-x-3">
+                {player.avatarUrl ? (
+                  <img
+                    src={player.avatarUrl}
+                    alt={player.name}
+                    className="w-10 h-10 rounded-full object-cover border border-gold-400/50 shadow"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-stadium-950 border border-stadium-800 flex items-center justify-center text-xs font-black text-gold-400">
+                    {player.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <div className="flex items-center space-x-1.5">
+                    <span className="font-extrabold text-sm text-white">{player.name}</span>
+                    <Star className="w-3 h-3 text-gold-400 fill-gold-400" />
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {player.roles.map((r, i) => (
+                      <span
+                        key={i}
+                        className="text-[9px] px-1.5 py-0.5 rounded bg-stadium-950 text-stadium-400 border border-stadium-800 font-medium"
+                      >
+                        {r}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1.5">
                 <button
                   onClick={() => handleToggleActive(player)}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${
@@ -300,21 +407,34 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
                 !player.isActive ? 'opacity-40' : ''
               }`}
             >
-              <div>
-                <div className="font-extrabold text-sm text-white">{player.name}</div>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {player.roles.map((r, i) => (
-                    <span
-                      key={i}
-                      className="text-[9px] px-1.5 py-0.5 rounded bg-stadium-950 text-stadium-400 border border-stadium-800 font-medium"
-                    >
-                      {r}
-                    </span>
-                  ))}
+              <div className="flex items-center space-x-3">
+                {player.avatarUrl ? (
+                  <img
+                    src={player.avatarUrl}
+                    alt={player.name}
+                    className="w-10 h-10 rounded-full object-cover border border-stadium-700 shadow"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-stadium-950 border border-stadium-800 flex items-center justify-center text-xs font-black text-stadium-400">
+                    {player.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <div className="font-extrabold text-sm text-white">{player.name}</div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {player.roles.map((r, i) => (
+                      <span
+                        key={i}
+                        className="text-[9px] px-1.5 py-0.5 rounded bg-stadium-950 text-stadium-400 border border-stadium-800 font-medium"
+                      >
+                        {r}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1.5">
                 <button
                   onClick={() => handleToggleActive(player)}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${

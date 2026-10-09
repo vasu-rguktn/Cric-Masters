@@ -1,24 +1,63 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { MatchSession, TossRecord } from '../types/match';
-import { getMatchHistory, saveMatchToHistory, getTossHistory } from '../services/storageService';
+import {
+  getMatchHistory,
+  saveMatchToHistory,
+  getTossHistory,
+  saveTossRecord,
+} from '../services/storageService';
+import {
+  fetchMatchHistoryFromSupabase,
+  fetchTossHistoryFromSupabase,
+  syncMatchToSupabase,
+  isSupabaseAvailable,
+} from '../services/supabaseService';
 import { formatDateDisplay } from '../utils/dates';
 import { shareOrCopyMatch } from '../utils/sharing';
-import { History, Trophy, Dices, Share2, Calendar } from 'lucide-react';
+import { History, Trophy, Dices, Share2, Calendar, RefreshCw } from 'lucide-react';
 
 export const HistoryPage: React.FC = () => {
   const [matches, setMatches] = useState<MatchSession[]>(() => getMatchHistory().reverse());
-  const [tosses] = useState<TossRecord[]>(() => getTossHistory().reverse());
+  const [tosses, setTosses] = useState<TossRecord[]>(() => getTossHistory().reverse());
   const [activeTab, setActiveTab] = useState<'matches' | 'tosses'>('matches');
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  const handleSetWinner = (matchId: string, winner: 'teamA' | 'teamB' | 'TIE') => {
+  const loadCloudHistory = async () => {
+    if (!isSupabaseAvailable()) return;
+    setIsRefreshing(true);
+    try {
+      const cloudMatches = await fetchMatchHistoryFromSupabase(100);
+      if (cloudMatches && cloudMatches.length > 0) {
+        setMatches(cloudMatches);
+        cloudMatches.forEach((m) => saveMatchToHistory(m));
+      }
+
+      const cloudTosses = await fetchTossHistoryFromSupabase(50);
+      if (cloudTosses && cloudTosses.length > 0) {
+        setTosses(cloudTosses);
+        cloudTosses.forEach((t) => saveTossRecord(t));
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCloudHistory();
+  }, []);
+
+  const handleSetWinner = async (matchId: string, winner: 'teamA' | 'teamB' | 'TIE') => {
     const updated = matches.map((m) =>
-      m.id === matchId ? { ...m, winnerTeamId: winner } : m
+      m.id === matchId ? { ...m, winnerTeamId: winner, updatedAt: new Date().toISOString() } : m
     );
     setMatches(updated);
 
     const targetMatch = updated.find((m) => m.id === matchId);
     if (targetMatch) {
       saveMatchToHistory(targetMatch);
+      await syncMatchToSupabase(targetMatch);
     }
   };
 
@@ -35,9 +74,19 @@ export const HistoryPage: React.FC = () => {
             <History className="w-5 h-5 text-turf-400" />
             <span>MATCH & TOSS LOG</span>
           </h2>
-          <span className="text-xs text-stadium-400 font-mono">
-            {matches.length} Saved Matches
-          </span>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={loadCloudHistory}
+              disabled={isRefreshing}
+              className="p-1.5 text-stadium-400 hover:text-turf-400 rounded-lg bg-stadium-950 border border-stadium-800 transition-all disabled:opacity-50"
+              title="Refresh from Supabase Cloud"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-turf-400' : ''}`} />
+            </button>
+            <span className="text-xs text-stadium-400 font-mono">
+              {matches.length} Saved
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center space-x-1 bg-stadium-950 p-1 rounded-xl border border-stadium-800">
@@ -68,7 +117,7 @@ export const HistoryPage: React.FC = () => {
         <div className="space-y-4">
           {matches.length === 0 ? (
             <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-8 text-center text-stadium-400 text-xs">
-              No matches generated yet. Tap MAKE TEAMS on the home tab to start!
+              No matches found in local or cloud database. Generate a match to start!
             </div>
           ) : (
             matches.map((match) => (
@@ -80,6 +129,11 @@ export const HistoryPage: React.FC = () => {
                   <div className="flex items-center space-x-1.5 text-turf-400 font-bold">
                     <Calendar className="w-3.5 h-3.5" />
                     <span>{formatDateDisplay(match.date)}</span>
+                    {match.matchNumber && (
+                      <span className="px-1.5 py-0.2 rounded bg-stadium-950 border border-stadium-800 text-[10px] text-stadium-300">
+                        M{match.matchNumber}
+                      </span>
+                    )}
                   </div>
                   <button
                     onClick={() => handleShareHistoryMatch(match)}
@@ -98,6 +152,14 @@ export const HistoryPage: React.FC = () => {
                       <div className="text-[10px] text-stadium-400 font-mono">
                         {match.teamA.players.length} Players
                       </div>
+                      {match.scorecard?.teamAScore && (
+                        <div className="text-[11px] font-mono font-bold text-stadium-200">
+                          {match.scorecard.teamAScore.runs}/{match.scorecard.teamAScore.wickets}{' '}
+                          <span className="text-[9px] text-stadium-500 font-normal">
+                            ({match.scorecard.teamAScore.overs} ov)
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="bg-stadium-950 p-2.5 rounded-xl border border-stadium-800 space-y-1">
@@ -107,6 +169,14 @@ export const HistoryPage: React.FC = () => {
                       <div className="text-[10px] text-stadium-400 font-mono">
                         {match.teamB.players.length} Players
                       </div>
+                      {match.scorecard?.teamBScore && (
+                        <div className="text-[11px] font-mono font-bold text-stadium-200">
+                          {match.scorecard.teamBScore.runs}/{match.scorecard.teamBScore.wickets}{' '}
+                          <span className="text-[9px] text-stadium-500 font-normal">
+                            ({match.scorecard.teamBScore.overs} ov)
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

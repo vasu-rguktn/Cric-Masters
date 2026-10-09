@@ -20,7 +20,7 @@ import {
   subscribeToMatchUpdates,
 } from '../services/supabaseService';
 import { formatDateDisplay, getTodayIsoDate } from '../utils/dates';
-import { shareOrCopyMatch } from '../utils/sharing';
+import { shareOrCopyMatch, copyMatchDirectLink } from '../utils/sharing';
 import { calculatePlayerPerformance } from '../utils/performanceRating';
 import {
   Play,
@@ -39,6 +39,7 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
+  Link as LinkIcon,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -361,6 +362,17 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
     setTimeout(() => setShareFeedback(null), 3000);
   };
 
+  const handleCopyLaptopLink = async () => {
+    if (!currentMatch) return;
+    const ok = await copyMatchDirectLink(currentMatch);
+    if (ok) {
+      setShareFeedback('🔗 Laptop Direct Link copied! Open this link on your Laptop to view today\'s teams instantly.');
+    } else {
+      setShareFeedback('Failed to copy link.');
+    }
+    setTimeout(() => setShareFeedback(null), 4000);
+  };
+
   const handleStartNewMatch = async () => {
     if (
       confirm(
@@ -653,6 +665,15 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
             >
               <Share2 className="w-4 h-4" />
               <span>SHARE</span>
+            </button>
+
+            <button
+              onClick={handleCopyLaptopLink}
+              className="px-3 py-2 bg-stadium-800 hover:bg-stadium-700 text-gold-400 rounded-xl font-bold border border-gold-500/40 transition-all flex items-center space-x-1"
+              title="Copy Direct Link for Laptop"
+            >
+              <LinkIcon className="w-4 h-4 text-gold-400" />
+              <span>LINK</span>
             </button>
 
             <button

@@ -2,12 +2,68 @@ import type { MatchSession } from '../types/match';
 import { formatDateDisplay } from './dates';
 import { calculatePlayerPerformance } from './performanceRating';
 
+export function encodeMatchToUrl(match: MatchSession): string {
+  try {
+    const compactPayload = {
+      id: match.id,
+      d: match.date,
+      m: match.matchNumber || 1,
+      p: match.availablePlayerIds,
+      ta: match.teamA,
+      tb: match.teamB,
+      j: match.joker,
+      l: match.limitations,
+      lk: match.isLocked,
+      tr: match.tossResult,
+      w: match.winnerTeamId,
+      sc: match.scorecard,
+    };
+    const jsonString = JSON.stringify(compactPayload);
+    const base64 = btoa(encodeURIComponent(jsonString));
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '';
+    return `${baseUrl}?m=${base64}`;
+  } catch (e) {
+    console.error('Failed to encode match to URL:', e);
+    return '';
+  }
+}
+
+export function decodeMatchFromUrl(urlParam: string): MatchSession | null {
+  try {
+    const jsonString = decodeURIComponent(atob(urlParam));
+    const raw = JSON.parse(jsonString);
+    if (!raw.ta || !raw.tb) return null;
+
+    const match: MatchSession = {
+      id: raw.id || `match-${Date.now()}`,
+      date: raw.d || new Date().toISOString().slice(0, 10),
+      matchNumber: raw.m || 1,
+      availablePlayerIds: raw.p || [],
+      teamA: raw.ta || null,
+      teamB: raw.tb || null,
+      joker: raw.j || null,
+      limitations: raw.l || [],
+      isLocked: !!raw.lk,
+      tossResult: raw.tr || null,
+      winnerTeamId: raw.w || null,
+      scorecard: raw.sc || undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return match;
+  } catch (e) {
+    console.error('Failed to decode match from URL parameter:', e);
+    return null;
+  }
+}
+
 export function formatMatchShareText(match: MatchSession): string {
   if (!match.teamA || !match.teamB) {
     return 'CRIC MASTERS - Faculty Cricket Match';
   }
 
   const dateFormatted = formatDateDisplay(match.date);
+  const directLink = encodeMatchToUrl(match);
 
   const teamAPlayers = match.teamA.players
     .map(
@@ -73,8 +129,23 @@ export function formatMatchShareText(match: MatchSession): string {
     text += `🏆 WINNER: ${winnerName}\n`;
   }
 
+  if (directLink) {
+    text += `\n🔗 OPEN TEAMS ON LAPTOP / OTHER DEVICE:\n${directLink}\n`;
+  }
+
   text += `\nGenerated with Cric Masters App`;
   return text;
+}
+
+export async function copyMatchDirectLink(match: MatchSession): Promise<boolean> {
+  const link = encodeMatchToUrl(match);
+  if (!link) return false;
+  try {
+    await navigator.clipboard.writeText(link);
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 export async function shareOrCopyMatch(match: MatchSession): Promise<'shared' | 'copied' | 'failed'> {

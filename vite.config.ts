@@ -40,4 +40,16 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'supabase-vendor': ['@supabase/supabase-js'],
+          'ui-vendor': ['lucide-react', 'canvas-confetti'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+  },
 });
