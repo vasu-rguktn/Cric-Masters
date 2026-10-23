@@ -5,7 +5,7 @@ import { TossCoin } from '../components/TossCoin';
 import { Users, Play, Calendar, ArrowRight, ShieldCheck, Clock, Star, Target } from 'lucide-react';
 import { getTodayIsoDate } from '../utils/dates';
 import { getMatchHistory, getTodayMatchesByDate, saveMatchToHistory } from '../services/storageService';
-import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates } from '../services/supabaseService';
+import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates, isSupabaseAvailable } from '../services/supabaseService';
 
 interface HomeProps {
   players: Player[];
@@ -78,8 +78,10 @@ export const Home: React.FC<HomeProps> = ({
     });
 
     const interval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (!isSupabaseAvailable()) return;
       loadTodayMatches();
-    }, 3000);
+    }, 10000);
 
     return () => {
       unsubscribe();

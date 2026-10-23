@@ -36,7 +36,7 @@ export function selectCaptains(
     return score;
   };
 
-  // Prevent Vasu from being captain
+  // Strictly prevent Vasu from being captain
   const candidatesA = teamAPlayers.filter((p) => !isVasu(p));
   const candidatesB = teamBPlayers.filter((p) => !isVasu(p));
 
@@ -47,9 +47,12 @@ export function selectCaptains(
     (a, b) => scoreCaptainCandidate(b) - scoreCaptainCandidate(a)
   );
 
+  const captainA = sortedA.find((p) => !isVasu(p)) || teamAPlayers.find((p) => !isVasu(p)) || teamAPlayers[0];
+  const captainB = sortedB.find((p) => !isVasu(p)) || teamBPlayers.find((p) => !isVasu(p)) || teamBPlayers[0];
+
   return {
-    captainA: sortedA[0] || teamAPlayers[0],
-    captainB: sortedB[0] || teamBPlayers[0],
+    captainA,
+    captainB,
   };
 }
 
@@ -69,7 +72,8 @@ export function replaceCaptainInTeam(
   newCaptainId: string
 ): Team {
   const newCaptain = team.players.find((p) => p.id === newCaptainId);
-  if (!newCaptain) return team;
+  // Vasu should never be captain
+  if (!newCaptain || isVasu(newCaptain)) return team;
 
   const dynamicName = `${newCaptain.name.toUpperCase()}'S TEAM`;
 

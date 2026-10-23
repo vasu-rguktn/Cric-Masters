@@ -18,6 +18,7 @@ import {
   syncMatchToSupabase,
   fetchTodayMatchesFromSupabase,
   subscribeToMatchUpdates,
+  isSupabaseAvailable,
 } from '../services/supabaseService';
 import { formatDateDisplay, getTodayIsoDate } from '../utils/dates';
 import { shareOrCopyMatch, copyMatchDirectLink } from '../utils/sharing';
@@ -95,31 +96,37 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
       const localMatches = getTodayMatchesByDate(todayStr);
       let m1 = localMatches.match1;
       let m2 = localMatches.match2;
+      let cloudSyncSuccess = false;
 
       // Try fetching from cloud for zero-login multi-device sync
-      try {
-        const cloudMatches = await fetchTodayMatchesFromSupabase(todayStr);
-        if (cloudMatches && cloudMatches.length > 0) {
-          const cloudM1 =
-            cloudMatches.find((m) => m.matchNumber === 1 || !m.matchNumber) || cloudMatches[0] || null;
-          const cloudM2 =
-            cloudMatches.find((m) => m.matchNumber === 2) || null;
+      if (isSupabaseAvailable()) {
+        try {
+          const cloudMatches = await fetchTodayMatchesFromSupabase(todayStr);
+          if (cloudMatches && cloudMatches.length > 0) {
+            cloudSyncSuccess = true;
+            const cloudM1 =
+              cloudMatches.find((m) => m.matchNumber === 1 || !m.matchNumber) || cloudMatches[0] || null;
+            const cloudM2 =
+              cloudMatches.find((m) => m.matchNumber === 2) || null;
 
-          if (cloudM1) {
-            if (!m1 || !m1.teamA || new Date(cloudM1.updatedAt) >= new Date(m1.updatedAt)) {
-              m1 = cloudM1;
-              saveMatchToHistory(cloudM1);
+            if (cloudM1) {
+              if (!m1 || !m1.teamA || new Date(cloudM1.updatedAt) >= new Date(m1.updatedAt)) {
+                m1 = cloudM1;
+                saveMatchToHistory(cloudM1);
+              }
             }
-          }
-          if (cloudM2) {
-            if (!m2 || !m2.teamA || new Date(cloudM2.updatedAt) >= new Date(m2.updatedAt)) {
-              m2 = cloudM2;
-              saveMatchToHistory(cloudM2);
+            if (cloudM2) {
+              if (!m2 || !m2.teamA || new Date(cloudM2.updatedAt) >= new Date(m2.updatedAt)) {
+                m2 = cloudM2;
+                saveMatchToHistory(cloudM2);
+              }
             }
+          } else if (cloudMatches) {
+            cloudSyncSuccess = true;
           }
+        } catch (e) {
+          // use local fallback
         }
-      } catch (e) {
-        // use local
       }
 
       setMatch1(m1);
@@ -142,7 +149,7 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
       }
 
       setLastSyncTime(new Date());
-      setSyncStatus('Live Synced');
+      setSyncStatus(cloudSyncSuccess ? 'Live Synced' : 'Local Storage');
       if (!silent) setIsSyncing(false);
     },
     [todayStr, activeMatchNumber, setCurrentMatch, setSelectedPlayerIds]
@@ -171,10 +178,12 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
       setLastSyncTime(new Date());
     });
 
-    // Background polling every 3 seconds for continuous multi-device sync
+    // Background polling every 10 seconds for multi-device sync (only if online & cloud reachable)
     const pollInterval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (!isSupabaseAvailable()) return;
       loadMatches(true);
-    }, 3000);
+    }, 10000);
 
     return () => {
       unsubscribe();

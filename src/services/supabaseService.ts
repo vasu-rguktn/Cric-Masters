@@ -153,6 +153,44 @@ let supabaseClient: SupabaseClient | null = null;
 let lastConfigUrl: string | null = null;
 let lastConfigKey: string | null = null;
 
+let failureCooldownUntil = 0;
+let consecutiveFailures = 0;
+
+export function isCloudAvailable(): boolean {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return false;
+  }
+  if (Date.now() < failureCooldownUntil) {
+    return false;
+  }
+  return getSupabaseClient() !== null;
+}
+
+export function recordCloudSuccess(): void {
+  consecutiveFailures = 0;
+  failureCooldownUntil = 0;
+}
+
+export function recordCloudFailure(err: any): void {
+  consecutiveFailures++;
+  const errMsg = String(err?.message || err || '');
+  const isNetwork =
+    errMsg.includes('Failed to fetch') ||
+    errMsg.includes('NetworkError') ||
+    errMsg.includes('ERR_NAME_NOT_RESOLVED') ||
+    errMsg.includes('ERR_CONNECTION_REFUSED');
+
+  if (isNetwork) {
+    const cooldownMs = Math.min(60000, 15000 * Math.pow(2, Math.min(consecutiveFailures - 1, 2)));
+    failureCooldownUntil = Date.now() + cooldownMs;
+    if (consecutiveFailures === 1) {
+      console.info(`[Cric Masters] Cloud database is temporarily unreachable (${errMsg}). Operating smoothly in offline local mode.`);
+    }
+  } else {
+    console.warn('[Cric Masters] Supabase notice:', errMsg);
+  }
+}
+
 const broadcastChannel: BroadcastChannel | null =
   typeof window !== 'undefined' && 'BroadcastChannel' in window
     ? new BroadcastChannel('cricmasters_match_sync')
@@ -206,7 +244,7 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 export function isSupabaseAvailable(): boolean {
-  return getSupabaseClient() !== null;
+  return isCloudAvailable();
 }
 
 export async function testSupabaseConnection(): Promise<{
@@ -251,6 +289,7 @@ export async function testSupabaseConnection(): Promise<{
     }
 
     if (results.players && results.daily_matches) {
+      recordCloudSuccess();
       return {
         success: true,
         message: 'Successfully connected to Cric Masters Supabase Cloud Database!',
@@ -265,6 +304,7 @@ export async function testSupabaseConnection(): Promise<{
       };
     }
   } catch (err: any) {
+    recordCloudFailure(err);
     return {
       success: false,
       message: `Connection failed: ${err?.message || 'Network error'}`,
@@ -276,6 +316,7 @@ export async function testSupabaseConnection(): Promise<{
 // PLAYERS CLOUD SYNC
 // ---------------------------------------------------------------------------
 export async function fetchAllPlayersFromSupabase(): Promise<Player[]> {
+  if (!isCloudAvailable()) return [];
   const client = getSupabaseClient();
   if (!client) return [];
 
@@ -286,10 +327,11 @@ export async function fetchAllPlayersFromSupabase(): Promise<Player[]> {
       .order('name', { ascending: true });
 
     if (error) {
-      console.warn('Supabase fetch players error:', error);
+      recordCloudFailure(error);
       return [];
     }
 
+    recordCloudSuccess();
     if (!data || data.length === 0) return [];
 
     return data.map((row: any) => ({
@@ -303,12 +345,13 @@ export async function fetchAllPlayersFromSupabase(): Promise<Player[]> {
       createdAt: row.created_at || new Date().toISOString(),
     }));
   } catch (e) {
-    console.warn('Supabase fetch players exception:', e);
+    recordCloudFailure(e);
     return [];
   }
 }
 
 export async function syncPlayersToSupabase(players: Player[]): Promise<boolean> {
+  if (!isCloudAvailable()) return false;
   const client = getSupabaseClient();
   if (!client || players.length === 0) return false;
 
@@ -329,25 +372,32 @@ export async function syncPlayersToSupabase(players: Player[]): Promise<boolean>
     );
 
     if (error) {
-      console.warn('Supabase player sync error:', error);
+      recordCloudFailure(error);
       return false;
     }
+    recordCloudSuccess();
     return true;
   } catch (e) {
-    console.warn('Supabase player sync exception:', e);
+    recordCloudFailure(e);
     return false;
   }
 }
 
 export async function deletePlayerFromSupabase(playerId: string): Promise<boolean> {
+  if (!isCloudAvailable()) return false;
   const client = getSupabaseClient();
   if (!client) return false;
 
   try {
     const { error } = await client.from('players').delete().eq('id', playerId);
-    return !error;
+    if (error) {
+      recordCloudFailure(error);
+      return false;
+    }
+    recordCloudSuccess();
+    return true;
   } catch (e) {
-    console.warn('Supabase delete player exception:', e);
+    recordCloudFailure(e);
     return false;
   }
 }
@@ -356,7 +406,7 @@ export function subscribeToPlayersUpdates(
   onPlayersReceived: (players: Player[]) => void
 ): () => void {
   const client = getSupabaseClient();
-  if (!client) return () => {};
+  if (!client || !isCloudAvailable()) return () => {};
 
   try {
     const channel = client
@@ -371,13 +421,23 @@ export function subscribeToPlayersUpdates(
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          recordCloudSuccess();
+        } else if (status === 'CHANNEL_ERROR') {
+          recordCloudFailure('Realtime player subscription error');
+        }
+      });
 
     return () => {
-      client.removeChannel(channel);
+      try {
+        client.removeChannel(channel);
+      } catch {
+        // ignore
+      }
     };
   } catch (e) {
-    console.warn('Failed to subscribe to player updates:', e);
+    recordCloudFailure(e);
     return () => {};
   }
 }
@@ -386,6 +446,7 @@ export function subscribeToPlayersUpdates(
 // MATCHES CLOUD SYNC
 // ---------------------------------------------------------------------------
 export async function fetchTodayMatchesFromSupabase(date: string): Promise<MatchSession[]> {
+  if (!isCloudAvailable()) return [];
   const client = getSupabaseClient();
   if (!client) return [];
 
@@ -397,20 +458,22 @@ export async function fetchTodayMatchesFromSupabase(date: string): Promise<Match
       .order('updated_at', { ascending: false });
 
     if (error) {
-      console.warn('Supabase fetch matches error:', error);
+      recordCloudFailure(error);
       return [];
     }
 
+    recordCloudSuccess();
     if (!data || data.length === 0) return [];
 
     return data.map((row: any) => mapRowToMatchSession(row));
   } catch (e) {
-    console.warn('Supabase fetch matches exception:', e);
+    recordCloudFailure(e);
     return [];
   }
 }
 
 export async function fetchMatchHistoryFromSupabase(limit: number = 100): Promise<MatchSession[]> {
+  if (!isCloudAvailable()) return [];
   const client = getSupabaseClient();
   if (!client) return [];
 
@@ -422,15 +485,16 @@ export async function fetchMatchHistoryFromSupabase(limit: number = 100): Promis
       .limit(limit);
 
     if (error) {
-      console.warn('Supabase fetch match history error:', error);
+      recordCloudFailure(error);
       return [];
     }
 
+    recordCloudSuccess();
     if (!data || data.length === 0) return [];
 
     return data.map((row: any) => mapRowToMatchSession(row));
   } catch (e) {
-    console.warn('Supabase fetch match history exception:', e);
+    recordCloudFailure(e);
     return [];
   }
 }
@@ -445,6 +509,7 @@ export async function syncMatchToSupabase(match: MatchSession): Promise<boolean>
     }
   }
 
+  if (!isCloudAvailable()) return false;
   const client = getSupabaseClient();
   if (!client) return false;
 
@@ -471,12 +536,13 @@ export async function syncMatchToSupabase(match: MatchSession): Promise<boolean>
     );
 
     if (error) {
-      console.warn('Supabase match sync error:', error);
+      recordCloudFailure(error);
       return false;
     }
+    recordCloudSuccess();
     return true;
   } catch (e) {
-    console.warn('Supabase match sync exception:', e);
+    recordCloudFailure(e);
     return false;
   }
 }
@@ -485,6 +551,7 @@ export async function syncMatchToSupabase(match: MatchSession): Promise<boolean>
 // TOSS HISTORY CLOUD SYNC
 // ---------------------------------------------------------------------------
 export async function syncTossRecordToSupabase(record: TossRecord): Promise<boolean> {
+  if (!isCloudAvailable()) return false;
   const client = getSupabaseClient();
   if (!client) return false;
 
@@ -495,14 +562,20 @@ export async function syncTossRecordToSupabase(record: TossRecord): Promise<bool
       caller_id: record.callerId || null,
       timestamp: record.timestamp || new Date().toISOString(),
     });
-    return !error;
+    if (error) {
+      recordCloudFailure(error);
+      return false;
+    }
+    recordCloudSuccess();
+    return true;
   } catch (e) {
-    console.warn('Supabase toss sync exception:', e);
+    recordCloudFailure(e);
     return false;
   }
 }
 
 export async function fetchTossHistoryFromSupabase(limit: number = 50): Promise<TossRecord[]> {
+  if (!isCloudAvailable()) return [];
   const client = getSupabaseClient();
   if (!client) return [];
 
@@ -513,7 +586,13 @@ export async function fetchTossHistoryFromSupabase(limit: number = 50): Promise<
       .order('timestamp', { ascending: false })
       .limit(limit);
 
-    if (error || !data) return [];
+    if (error) {
+      recordCloudFailure(error);
+      return [];
+    }
+
+    recordCloudSuccess();
+    if (!data) return [];
 
     return data.map((r: any) => ({
       id: r.id,
@@ -521,7 +600,8 @@ export async function fetchTossHistoryFromSupabase(limit: number = 50): Promise<
       callerId: r.caller_id || undefined,
       timestamp: r.timestamp || r.created_at,
     }));
-  } catch {
+  } catch (e) {
+    recordCloudFailure(e);
     return [];
   }
 }
@@ -568,7 +648,7 @@ export function subscribeToMatchUpdates(
   const client = getSupabaseClient();
   let supabaseSubscription: any = null;
 
-  if (client) {
+  if (client && isCloudAvailable()) {
     try {
       supabaseSubscription = client
         .channel(`public:daily_matches:date=${date}`)
@@ -589,9 +669,15 @@ export function subscribeToMatchUpdates(
             }
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            recordCloudSuccess();
+          } else if (status === 'CHANNEL_ERROR') {
+            recordCloudFailure('Realtime match subscription error');
+          }
+        });
     } catch (e) {
-      console.warn('Failed to subscribe to realtime match updates:', e);
+      recordCloudFailure(e);
     }
   }
 

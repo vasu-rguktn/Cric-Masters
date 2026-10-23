@@ -12,11 +12,263 @@ import {
   isSrinivas,
   isShiva,
   isRK,
+  isLK,
   isAnurupam,
   isSuresh,
   isKrishna,
   isVinod,
 } from './playerHelpers';
+
+/**
+ * Determines whether Srinivas and Shiva should be on opposite teams (true) or same team (false)
+ * to maintain the ratio of being opposite in 4 out of 6 matches (4/6 opposite, 2/6 same).
+ */
+export function determineSrinivasShivaOppositeTarget(
+  history: MatchSession[],
+  hasSrinivas: boolean,
+  hasShiva: boolean
+): boolean | null {
+  if (!hasSrinivas || !hasShiva) return null;
+
+  // Gather recent matches where both Srinivas & Shiva were on teamA or teamB (not joker)
+  const recentOppositeHistory: boolean[] = [];
+  for (let i = history.length - 1; i >= 0 && recentOppositeHistory.length < 5; i--) {
+    const m = history[i];
+    if (!m.teamA || !m.teamB) continue;
+
+    const srA = m.teamA.players.some(isSrinivas);
+    const srB = m.teamB.players.some(isSrinivas);
+    const shivaA = m.teamA.players.some(isShiva);
+    const shivaB = m.teamB.players.some(isShiva);
+
+    if ((srA || srB) && (shivaA || shivaB)) {
+      const isOpp = (srA && shivaB) || (srB && shivaA);
+      recentOppositeHistory.push(isOpp);
+    }
+  }
+
+  const oppCount = recentOppositeHistory.filter(Boolean).length;
+  const sameCount = recentOppositeHistory.length - oppCount;
+
+  // In a 6-match window, Srinivas is opposite Shiva 4 times and together 2 times
+  if (oppCount >= 4) {
+    return false; // Reached cap of 4 opposite -> force same team
+  }
+  if (sameCount >= 2) {
+    return true; // Reached cap of 2 same team -> force opposite teams
+  }
+
+  const remainingOpp = 4 - oppCount;
+  const remainingSlots = 6 - recentOppositeHistory.length;
+  const probOpp = Math.max(0, Math.min(1, remainingOpp / remainingSlots));
+  return Math.random() < probOpp;
+}
+
+export interface LKSrinivasTargets {
+  lkTargetSameAsVasu: boolean | null;
+  srinivasTargetSameAsVasu: boolean | null;
+  lkSrinivasTargetSameTeam: boolean | null;
+}
+
+/**
+ * Determines targets for LK Sir and Srinivas Sir:
+ * 1. Frequently change in Vasu's team (rotate into/out of Vasu's team between matches).
+ * 2. Come in the same team also (regularly play together).
+ */
+export function determineLKSrinivasTargets(
+  history: MatchSession[],
+  hasVasu: boolean,
+  hasLK: boolean,
+  hasSrinivas: boolean,
+  vasuTeamSlotsAvailable: number
+): LKSrinivasTargets {
+  if (!hasLK && !hasSrinivas) {
+    return {
+      lkTargetSameAsVasu: null,
+      srinivasTargetSameAsVasu: null,
+      lkSrinivasTargetSameTeam: null,
+    };
+  }
+
+  // Case 1: Vasu is not in the pool (e.g. absent or Vasu is Joker playing on both sides)
+  if (!hasVasu) {
+    if (hasLK && hasSrinivas) {
+      // Find whether LK and Srinivas were on same team in the most recent match
+      let lastLkSrSame: boolean | null = null;
+      for (let i = history.length - 1; i >= 0; i--) {
+        const m = history[i];
+        if (!m.teamA || !m.teamB) continue;
+        const lkA = m.teamA.players.some(isLK);
+        const lkB = m.teamB.players.some(isLK);
+        const srA = m.teamA.players.some(isSrinivas);
+        const srB = m.teamB.players.some(isSrinivas);
+        if ((lkA || lkB) && (srA || srB)) {
+          lastLkSrSame = (lkA && srA) || (lkB && srB);
+          break;
+        }
+      }
+
+      // Alternate: ~50% same team, ~50% opposite
+      const probSame = lastLkSrSame === true ? 0.35 : 0.60;
+      return {
+        lkTargetSameAsVasu: null,
+        srinivasTargetSameAsVasu: null,
+        lkSrinivasTargetSameTeam: Math.random() < probSame,
+      };
+    }
+
+    return {
+      lkTargetSameAsVasu: null,
+      srinivasTargetSameAsVasu: null,
+      lkSrinivasTargetSameTeam: null,
+    };
+  }
+
+  // Case 2: Vasu is playing in a team (hasVasu is true)
+  if (hasLK && hasSrinivas) {
+    let lastLkWithVasu: boolean | null = null;
+    let lastSrWithVasu: boolean | null = null;
+    let lastLkSrSame: boolean | null = null;
+
+    for (let i = history.length - 1; i >= 0; i--) {
+      const m = history[i];
+      if (!m.teamA || !m.teamB) continue;
+
+      const vasuA = m.teamA.players.some(isVasu);
+      const vasuB = m.teamB.players.some(isVasu);
+      if (!vasuA && !vasuB) continue;
+
+      const lkA = m.teamA.players.some(isLK);
+      const lkB = m.teamB.players.some(isLK);
+      const srA = m.teamA.players.some(isSrinivas);
+      const srB = m.teamB.players.some(isSrinivas);
+
+      if (lastLkWithVasu === null && (lkA || lkB)) {
+        lastLkWithVasu = (vasuA && lkA) || (vasuB && lkB);
+      }
+      if (lastSrWithVasu === null && (srA || srB)) {
+        lastSrWithVasu = (vasuA && srA) || (vasuB && srB);
+      }
+      if (lastLkSrSame === null && (lkA || lkB) && (srA || srB)) {
+        lastLkSrSame = (lkA && srA) || (lkB && srB);
+      }
+
+      if (lastLkWithVasu !== null && lastSrWithVasu !== null && lastLkSrSame !== null) {
+        break;
+      }
+    }
+
+    // Determine whether LK and Srinivas should come in the SAME team in this match
+    let targetSameTeam: boolean;
+    if (lastLkSrSame === true) {
+      targetSameTeam = Math.random() < 0.35; // 35% same, 65% rotate to opposite
+    } else if (lastLkSrSame === false) {
+      targetSameTeam = Math.random() < 0.55; // 55% same team
+    } else {
+      targetSameTeam = Math.random() < 0.45; // default ~45% same team
+    }
+
+    const canBothFitWithVasu = vasuTeamSlotsAvailable >= 2;
+
+    if (targetSameTeam) {
+      // Both LK and Srinivas on the SAME TEAM!
+      let bothWithVasu = false;
+      if (canBothFitWithVasu) {
+        if (lastLkWithVasu === true && lastSrWithVasu === true) {
+          bothWithVasu = false; // rotate opposite Vasu
+        } else if (lastLkWithVasu === false && lastSrWithVasu === false) {
+          bothWithVasu = true; // rotate to with Vasu
+        } else {
+          bothWithVasu = Math.random() < 0.5;
+        }
+      } else {
+        bothWithVasu = false; // both fit together opposite Vasu
+      }
+
+      return {
+        lkTargetSameAsVasu: bothWithVasu,
+        srinivasTargetSameAsVasu: bothWithVasu,
+        lkSrinivasTargetSameTeam: true,
+      };
+    } else {
+      // LK and Srinivas on OPPOSITE TEAMS (one with Vasu, one opposite Vasu)
+      let lkWithVasu: boolean;
+      if (lastLkWithVasu === true && lastSrWithVasu === false) {
+        lkWithVasu = false; // LK rotates out, Srinivas rotates in
+      } else if (lastLkWithVasu === false && lastSrWithVasu === true) {
+        lkWithVasu = true; // Srinivas rotates out, LK rotates in
+      } else if (lastLkWithVasu === true) {
+        lkWithVasu = false;
+      } else if (lastSrWithVasu === true) {
+        lkWithVasu = true;
+      } else {
+        lkWithVasu = Math.random() < 0.5;
+      }
+
+      return {
+        lkTargetSameAsVasu: lkWithVasu,
+        srinivasTargetSameAsVasu: !lkWithVasu,
+        lkSrinivasTargetSameTeam: false,
+      };
+    }
+  }
+
+  // Only LK is present
+  if (hasLK) {
+    let lastLkWithVasu: boolean | null = null;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const m = history[i];
+      if (!m.teamA || !m.teamB) continue;
+      const vasuA = m.teamA.players.some(isVasu);
+      const vasuB = m.teamB.players.some(isVasu);
+      if (!vasuA && !vasuB) continue;
+      const lkA = m.teamA.players.some(isLK);
+      const lkB = m.teamB.players.some(isLK);
+      if (lkA || lkB) {
+        lastLkWithVasu = (vasuA && lkA) || (vasuB && lkB);
+        break;
+      }
+    }
+
+    const probWithVasu = lastLkWithVasu === true ? 0.25 : lastLkWithVasu === false ? 0.75 : 0.5;
+    return {
+      lkTargetSameAsVasu: Math.random() < probWithVasu,
+      srinivasTargetSameAsVasu: null,
+      lkSrinivasTargetSameTeam: null,
+    };
+  }
+
+  // Only Srinivas is present
+  if (hasSrinivas) {
+    let lastSrWithVasu: boolean | null = null;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const m = history[i];
+      if (!m.teamA || !m.teamB) continue;
+      const vasuA = m.teamA.players.some(isVasu);
+      const vasuB = m.teamB.players.some(isVasu);
+      if (!vasuA && !vasuB) continue;
+      const srA = m.teamA.players.some(isSrinivas);
+      const srB = m.teamB.players.some(isSrinivas);
+      if (srA || srB) {
+        lastSrWithVasu = (vasuA && srA) || (vasuB && srB);
+        break;
+      }
+    }
+
+    const probWithVasu = lastSrWithVasu === true ? 0.25 : lastSrWithVasu === false ? 0.75 : 0.5;
+    return {
+      lkTargetSameAsVasu: null,
+      srinivasTargetSameAsVasu: Math.random() < probWithVasu,
+      lkSrinivasTargetSameTeam: null,
+    };
+  }
+
+  return {
+    lkTargetSameAsVasu: null,
+    srinivasTargetSameAsVasu: null,
+    lkSrinivasTargetSameTeam: null,
+  };
+}
 
 export function generateTeams(
   availablePlayers: Player[],
@@ -52,14 +304,60 @@ export function generateTeams(
   }
 
   const hasVasu = pool.some(isVasu);
+  const hasSuresh = pool.some(isSuresh);
+  const hasVinod = pool.some(isVinod);
   const hasRK = pool.some(isRK);
   const hasAnurupam = pool.some(isAnurupam);
+  const hasLK = pool.some(isLK);
+  const hasSrinivas = pool.some(isSrinivas);
+  const hasShiva = pool.some(isShiva);
+
+  // Available slots on Vasu's team for optional/probabilistic players
+  const mandatoryInVasuTeam = (hasVasu ? 1 : 0) + (hasSuresh && hasVasu ? 1 : 0) + (hasVinod && hasVasu ? 1 : 0);
+  const vasuSlots = Math.max(0, teamASize - mandatoryInVasuTeam);
+
+  // Targets for LK & Srinivas
+  const lkSrTargets = determineLKSrinivasTargets(history, hasVasu, hasLK, hasSrinivas, vasuSlots);
+
+  // Capacity allocation for RK and Anurupam on Vasu's team
+  let slotsUsedInVasu = 0;
+  if (lkSrTargets.lkTargetSameAsVasu === true) slotsUsedInVasu++;
+  if (lkSrTargets.srinivasTargetSameAsVasu === true) slotsUsedInVasu++;
+
+  const remainingForRkAnu = Math.max(0, vasuSlots - slotsUsedInVasu);
 
   // Probabilistic 5/6 (83.33%) targets for RK and Anurupam to be in Vasu's team
-  const rkTargetSame = (hasRK && hasVasu) ? (Math.random() < 5 / 6) : null;
-  const anurupamTargetSame = (hasAnurupam && hasVasu) ? (Math.random() < 5 / 6) : null;
+  let rkTargetSame: boolean | null = null;
+  let anurupamTargetSame: boolean | null = null;
 
-  const targets = { rkTargetSame, anurupamTargetSame };
+  if (hasRK && hasVasu) {
+    if (remainingForRkAnu >= 1) {
+      rkTargetSame = Math.random() < 5 / 6;
+    } else {
+      rkTargetSame = false;
+    }
+  }
+
+  if (hasAnurupam && hasVasu) {
+    const slotsLeft = remainingForRkAnu - (rkTargetSame === true ? 1 : 0);
+    if (slotsLeft >= 1) {
+      anurupamTargetSame = Math.random() < 5 / 6;
+    } else {
+      anurupamTargetSame = false;
+    }
+  }
+
+  // Srinivas vs Shiva 4/6 rule target
+  const srinivasShivaOpposite = determineSrinivasShivaOppositeTarget(history, hasSrinivas, hasShiva);
+
+  const targets = {
+    rkTargetSame,
+    anurupamTargetSame,
+    srinivasShivaOpposite,
+    lkTargetSameAsVasu: lkSrTargets.lkTargetSameAsVasu,
+    srinivasTargetSameAsVasu: lkSrTargets.srinivasTargetSameAsVasu,
+    lkSrinivasTargetSameTeam: lkSrTargets.lkSrinivasTargetSameTeam,
+  };
 
   const SAMPLE_COUNT = Math.min(1000, Math.pow(2, pool.length));
   let bestScore = -Infinity;
@@ -117,6 +415,14 @@ export function generateTeams(
 
   const { captainA, captainB } = selectCaptains(bestSplit.teamA, bestSplit.teamB, history);
 
+  // Strictly ensure Vasu is never captain
+  const safeCaptainA = isVasu(captainA)
+    ? bestSplit.teamA.find((p) => !isVasu(p)) || captainA
+    : captainA;
+  const safeCaptainB = isVasu(captainB)
+    ? bestSplit.teamB.find((p) => !isVasu(p)) || captainB
+    : captainB;
+
   const summaryA = calculateTeamRoleSummary(bestSplit.teamA);
   const summaryB = calculateTeamRoleSummary(bestSplit.teamB);
   const finalBalanceScore = calculateBalanceScore(summaryA, summaryB);
@@ -140,18 +446,18 @@ export function generateTeams(
 
   const teamA: Team = {
     id: 'teamA',
-    captainId: captainA.id,
-    captainName: captainA.name,
-    name: `${captainA.name.toUpperCase()}'S TEAM`,
+    captainId: safeCaptainA.id,
+    captainName: safeCaptainA.name,
+    name: `${safeCaptainA.name.toUpperCase()}'S TEAM`,
     players: bestSplit.teamA,
     roleSummary: summaryA,
   };
 
   const teamB: Team = {
     id: 'teamB',
-    captainId: captainB.id,
-    captainName: captainB.name,
-    name: `${captainB.name.toUpperCase()}'S TEAM`,
+    captainId: safeCaptainB.id,
+    captainName: safeCaptainB.name,
+    name: `${safeCaptainB.name.toUpperCase()}'S TEAM`,
     players: bestSplit.teamB,
     roleSummary: summaryB,
   };
@@ -172,17 +478,26 @@ function isSplitValid(
   targets: {
     rkTargetSame: boolean | null;
     anurupamTargetSame: boolean | null;
+    srinivasShivaOpposite: boolean | null;
+    lkTargetSameAsVasu: boolean | null;
+    srinivasTargetSameAsVasu: boolean | null;
+    lkSrinivasTargetSameTeam: boolean | null;
   },
   enforceProbabilistic: boolean = true
 ): boolean {
-  // 1. Srinivas & Shiva ALWAYS in opposite teams
+  // 1. Srinivas & Shiva: 4 times opposite in 4/6 matches
   const srinivasInA = candidateA.some(isSrinivas);
   const srinivasInB = candidateB.some(isSrinivas);
   const shivaInA = candidateA.some(isShiva);
   const shivaInB = candidateB.some(isShiva);
 
-  if ((srinivasInA && shivaInA) || (srinivasInB && shivaInB)) {
-    return false;
+  if ((srinivasInA || srinivasInB) && (shivaInA || shivaInB)) {
+    const areOpposite = (srinivasInA && shivaInB) || (srinivasInB && shivaInA);
+    if (targets.srinivasShivaOpposite !== null) {
+      if (areOpposite !== targets.srinivasShivaOpposite) {
+        return false;
+      }
+    }
   }
 
   // 2. Suresh & Vasu ALWAYS in same team
@@ -217,8 +532,35 @@ function isSplitValid(
     }
   }
 
-  // 5. Probabilistic 5/6 rules for RK and Anurupam with Vasu
+  // 5. LK Sir & Srinivas Sir same team target
+  const lkInA = candidateA.some(isLK);
+  const lkInB = candidateB.some(isLK);
+
+  if ((lkInA || lkInB) && (srinivasInA || srinivasInB)) {
+    const lkSrSame = (lkInA && srinivasInA) || (lkInB && srinivasInB);
+    if (targets.lkSrinivasTargetSameTeam !== null && enforceProbabilistic) {
+      if (lkSrSame !== targets.lkSrinivasTargetSameTeam) {
+        return false;
+      }
+    }
+  }
+
+  // 6. LK & Srinivas frequently change in Vasu's team
   if (enforceProbabilistic && (vasuInA || vasuInB)) {
+    if (targets.lkTargetSameAsVasu !== null && (lkInA || lkInB)) {
+      const lkSameWithVasu = (lkInA && vasuInA) || (lkInB && vasuInB);
+      if (lkSameWithVasu !== targets.lkTargetSameAsVasu) {
+        return false;
+      }
+    }
+
+    if (targets.srinivasTargetSameAsVasu !== null && (srinivasInA || srinivasInB)) {
+      const srSameWithVasu = (srinivasInA && vasuInA) || (srinivasInB && vasuInB);
+      if (srSameWithVasu !== targets.srinivasTargetSameAsVasu) {
+        return false;
+      }
+    }
+
     // RK with Vasu 5 out of 6 times
     if (targets.rkTargetSame !== null) {
       const rkInA = candidateA.some(isRK);

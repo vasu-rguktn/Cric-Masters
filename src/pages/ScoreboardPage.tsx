@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { MatchSession } from '../types/match';
 import { UmpireControls } from '../components/UmpireControls';
 import { getTodayMatchesByDate, saveCurrentMatch } from '../services/storageService';
-import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates } from '../services/supabaseService';
+import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates, isSupabaseAvailable } from '../services/supabaseService';
 import { getTodayIsoDate, formatDateDisplay } from '../utils/dates';
 import { RefreshCw } from 'lucide-react';
 
@@ -71,8 +71,10 @@ export const ScoreboardPage: React.FC<ScoreboardPageProps> = ({ currentMatch, se
     });
 
     const interval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (!isSupabaseAvailable()) return;
       loadScoreboardData(true);
-    }, 2500);
+    }, 10000);
 
     return () => {
       unsubscribe();
