@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Player } from './types/player';
 import type { MatchSession } from './types/match';
 import {
@@ -7,10 +7,11 @@ import {
   getCurrentMatch,
   saveCurrentMatch,
   saveMatchToHistory,
+  clearCurrentMatch,
 } from './services/storageService';
 import {
   fetchAllPlayersFromSupabase,
-  fetchTodayMatchesFromSupabase,
+  fetchLatestTodayMatchFromSupabase,
   subscribeToPlayersUpdates,
   subscribeToMatchUpdates,
   isSupabaseAvailable,
@@ -33,7 +34,10 @@ export function App() {
   });
 
   const [players, setPlayers] = useState<Player[]>(() => getStoredPlayers());
-  const [currentMatch, setCurrentMatch] = useState<MatchSession | null>(() => getCurrentMatch());
+  // Load current match with auto-expiration (if from yesterday/earlier, archives & returns null)
+  const [currentMatch, setCurrentMatch] = useState<MatchSession | null>(() => getCurrentMatch(true));
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<Date>(new Date());
 
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(() => {
     if (currentMatch?.availablePlayerIds && currentMatch.availablePlayerIds.length > 0) {
@@ -42,45 +46,58 @@ export function App() {
     return players.filter((p) => p.isActive && p.isRegular).map((p) => p.id);
   });
 
-  // Sync players and matches from Supabase on startup and subscribe to realtime updates
+  // Master sync function to pull latest players and today's match from Supabase
+  const syncCloudData = useCallback(async (silent: boolean = false): Promise<boolean> => {
+    if (!silent) setIsRefreshing(true);
+    const todayStr = getTodayIsoDate();
+
+    let success = false;
+    try {
+      if (isSupabaseAvailable()) {
+        const [cloudPlayers, cloudMatch] = await Promise.all([
+          fetchAllPlayersFromSupabase(),
+          fetchLatestTodayMatchFromSupabase(todayStr),
+        ]);
+
+        if (cloudPlayers && cloudPlayers.length > 0) {
+          setPlayers(cloudPlayers);
+          saveStoredPlayers(cloudPlayers);
+        }
+
+        if (cloudMatch) {
+          setCurrentMatch(cloudMatch);
+          saveCurrentMatch(cloudMatch);
+          saveMatchToHistory(cloudMatch);
+          if (cloudMatch.availablePlayerIds && cloudMatch.availablePlayerIds.length > 0) {
+            setSelectedPlayerIds(cloudMatch.availablePlayerIds);
+          }
+          success = true;
+        } else {
+          // If no cloud match exists for today, ensure currentMatch belongs to today
+          const local = getCurrentMatch(true);
+          if (local && local.date === todayStr) {
+            setCurrentMatch(local);
+          } else {
+            setCurrentMatch(null);
+          }
+          success = true;
+        }
+      }
+    } catch (e) {
+      console.warn('Sync cloud error:', e);
+    } finally {
+      setLastSyncedTime(new Date());
+      if (!silent) setIsRefreshing(false);
+    }
+    return success;
+  }, []);
+
+  // Sync on mount and subscribe to Realtime updates
   useEffect(() => {
     let isMounted = true;
     const todayStr = getTodayIsoDate();
 
-    async function syncCloudData() {
-      if (isSupabaseAvailable()) {
-        try {
-          const [cloudPlayers, cloudMatches] = await Promise.all([
-            fetchAllPlayersFromSupabase(),
-            fetchTodayMatchesFromSupabase(todayStr),
-          ]);
-
-          if (isMounted && cloudPlayers && cloudPlayers.length > 0) {
-            setPlayers(cloudPlayers);
-            saveStoredPlayers(cloudPlayers);
-          }
-
-          if (isMounted && cloudMatches && cloudMatches.length > 0) {
-            const m1 =
-              cloudMatches.find(
-                (m: MatchSession) => m.matchNumber === 1 || !m.matchNumber
-              ) || cloudMatches[0];
-            if (m1) {
-              setCurrentMatch(m1);
-              saveCurrentMatch(m1);
-              saveMatchToHistory(m1);
-              if (m1.availablePlayerIds && m1.availablePlayerIds.length > 0) {
-                setSelectedPlayerIds(m1.availablePlayerIds);
-              }
-            }
-          }
-        } catch (e) {
-          // fallback to stored
-        }
-      }
-    }
-
-    syncCloudData();
+    syncCloudData(true);
 
     const unsubPlayers = subscribeToPlayersUpdates((cloudPlayers) => {
       if (isMounted && cloudPlayers && cloudPlayers.length > 0) {
@@ -90,13 +107,14 @@ export function App() {
     });
 
     const unsubMatches = subscribeToMatchUpdates(todayStr, (updatedMatch: MatchSession) => {
-      if (isMounted && updatedMatch) {
+      if (isMounted && updatedMatch && updatedMatch.date === getTodayIsoDate()) {
         saveCurrentMatch(updatedMatch);
         saveMatchToHistory(updatedMatch);
         setCurrentMatch(updatedMatch);
         if (updatedMatch.availablePlayerIds && updatedMatch.availablePlayerIds.length > 0) {
           setSelectedPlayerIds(updatedMatch.availablePlayerIds);
         }
+        setLastSyncedTime(new Date());
       }
     });
 
@@ -105,8 +123,57 @@ export function App() {
       unsubPlayers();
       unsubMatches();
     };
-  }, []);
+  }, [syncCloudData]);
 
+  // Tab Visibility & Focus Watcher: Re-sync instantly when phone is unlocked or user returns to tab
+  useEffect(() => {
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncCloudData(true);
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
+  }, [syncCloudData]);
+
+  // Midnight Rollover Watcher (11:59PM -> 00:00AM): Automatically vanish past match and reset for new day
+  useEffect(() => {
+    let lastCheckedDate = getTodayIsoDate();
+
+    const checkMidnight = () => {
+      const currentDate = getTodayIsoDate();
+      if (currentDate !== lastCheckedDate) {
+        console.log(`[Cric Masters] Date rolled over to ${currentDate}. Resetting match for new day.`);
+        lastCheckedDate = currentDate;
+
+        // Archive previous match into history & clear current active match
+        const oldMatch = getCurrentMatch(false);
+        if (oldMatch) {
+          saveMatchToHistory(oldMatch);
+          clearCurrentMatch();
+        }
+        setCurrentMatch(null);
+
+        // Reset selected players to regular active pool
+        const regularIds = players.filter((p) => p.isActive && p.isRegular).map((p) => p.id);
+        setSelectedPlayerIds(regularIds);
+
+        // Re-sync with cloud for the new date
+        syncCloudData(true);
+      }
+    };
+
+    const interval = setInterval(checkMidnight, 15000); // Check every 15s
+    return () => clearInterval(interval);
+  }, [players, syncCloudData]);
+
+  // Theme effect
   useEffect(() => {
     const root = document.documentElement;
     if (theme === 'light') {
@@ -123,8 +190,8 @@ export function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
+  // URL sharing check
   useEffect(() => {
-    // 1. Check for URL shared match parameter (e.g. ?m=... or ?match=...)
     if (typeof window !== 'undefined' && window.location.search) {
       const searchParams = new URLSearchParams(window.location.search);
       const sharedParam = searchParams.get('m') || searchParams.get('match');
@@ -138,28 +205,8 @@ export function App() {
             setSelectedPlayerIds(decodedMatch.availablePlayerIds);
           }
           window.history.replaceState({}, document.title, window.location.pathname);
-          return;
         }
       }
-    }
-
-    if (!currentMatch) {
-      const todayStr = getTodayIsoDate();
-      const initialMatch: MatchSession = {
-        id: 'match-' + Date.now(),
-        date: todayStr,
-        availablePlayerIds: selectedPlayerIds,
-        teamA: null,
-        teamB: null,
-        joker: null,
-        limitations: [],
-        isLocked: false,
-        tossResult: null,
-        winnerTeamId: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setCurrentMatch(initialMatch);
     }
   }, []);
 
@@ -185,6 +232,9 @@ export function App() {
             currentMatch={currentMatch}
             onNavigate={setActiveTab}
             onMakeTeamsClick={handleMakeTeamsFromHome}
+            onRefresh={() => syncCloudData(false)}
+            isRefreshing={isRefreshing}
+            lastSyncedTime={lastSyncedTime}
           />
         )}
 
@@ -195,6 +245,9 @@ export function App() {
             setSelectedPlayerIds={setSelectedPlayerIds}
             currentMatch={currentMatch}
             setCurrentMatch={setCurrentMatch}
+            onRefresh={() => syncCloudData(false)}
+            isRefreshing={isRefreshing}
+            lastSyncedTime={lastSyncedTime}
           />
         )}
 

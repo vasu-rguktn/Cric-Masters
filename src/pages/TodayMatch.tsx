@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Player } from '../types/player';
 import type { MatchSession, TossOutcome, PlayerMatchStat, TeamScore } from '../types/match';
 import { PlayerSelector } from '../components/PlayerSelector';
@@ -12,14 +12,9 @@ import {
   getMatchHistory,
   saveMatchToHistory,
   saveCurrentMatch,
-  getTodayMatchesByDate,
+  clearCurrentMatch,
 } from '../services/storageService';
-import {
-  syncMatchToSupabase,
-  fetchTodayMatchesFromSupabase,
-  subscribeToMatchUpdates,
-  isSupabaseAvailable,
-} from '../services/supabaseService';
+import { syncMatchToSupabase } from '../services/supabaseService';
 import { formatDateDisplay, getTodayIsoDate } from '../utils/dates';
 import { shareOrCopyMatch, copyMatchDirectLink } from '../utils/sharing';
 import { calculatePlayerPerformance } from '../utils/performanceRating';
@@ -34,8 +29,6 @@ import {
   Trophy,
   Save,
   RefreshCw,
-  Copy,
-  Zap,
   UserCheck,
   ChevronDown,
   ChevronUp,
@@ -50,6 +43,9 @@ interface TodayMatchProps {
   setSelectedPlayerIds: (ids: string[]) => void;
   currentMatch: MatchSession | null;
   setCurrentMatch: (match: MatchSession | null) => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
+  lastSyncedTime?: Date;
 }
 
 export const TodayMatch: React.FC<TodayMatchProps> = ({
@@ -58,24 +54,14 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
   setSelectedPlayerIds,
   currentMatch,
   setCurrentMatch,
+  onRefresh,
+  isRefreshing = false,
+  lastSyncedTime = new Date(),
 }) => {
-  const [activeMatchNumber, setActiveMatchNumber] = useState<1 | 2>(1);
   const [useJokerOption] = useState<boolean>(false);
   const [isMatchCardOpen, setIsMatchCardOpen] = useState<boolean>(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [isPlayerSelectorExpanded, setIsPlayerSelectorExpanded] = useState<boolean>(false);
-
-  const isPlayerSelectionInitializedRef = React.useRef<boolean>(false);
-  const prevActiveMatchNumRef = React.useRef<1 | 2>(activeMatchNumber);
-
-  // Sync state
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
-  const [syncStatus, setSyncStatus] = useState<string>('Live Synced');
-
-  // Match 1 and Match 2 local states
-  const [match1, setMatch1] = useState<MatchSession | null>(null);
-  const [match2, setMatch2] = useState<MatchSession | null>(null);
 
   // Scoreboard Inline States
   const [teamAScore, setTeamAScore] = useState<TeamScore>({ runs: 0, wickets: 0, overs: 0 });
@@ -86,127 +72,29 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const activePlayers = players.filter((p) => p.isActive);
-  const todayStr = currentMatch?.date || getTodayIsoDate();
+  const todayStr = getTodayIsoDate();
 
-  // Load matches from local storage & Supabase
-  const loadMatches = useCallback(
-    async (silent: boolean = false) => {
-      if (!silent) setIsSyncing(true);
-
-      const localMatches = getTodayMatchesByDate(todayStr);
-      let m1 = localMatches.match1;
-      let m2 = localMatches.match2;
-      let cloudSyncSuccess = false;
-
-      // Try fetching from cloud for zero-login multi-device sync
-      if (isSupabaseAvailable()) {
-        try {
-          const cloudMatches = await fetchTodayMatchesFromSupabase(todayStr);
-          if (cloudMatches && cloudMatches.length > 0) {
-            cloudSyncSuccess = true;
-            const cloudM1 =
-              cloudMatches.find((m) => m.matchNumber === 1 || !m.matchNumber) || cloudMatches[0] || null;
-            const cloudM2 =
-              cloudMatches.find((m) => m.matchNumber === 2) || null;
-
-            if (cloudM1) {
-              if (!m1 || !m1.teamA || new Date(cloudM1.updatedAt) >= new Date(m1.updatedAt)) {
-                m1 = cloudM1;
-                saveMatchToHistory(cloudM1);
-              }
-            }
-            if (cloudM2) {
-              if (!m2 || !m2.teamA || new Date(cloudM2.updatedAt) >= new Date(m2.updatedAt)) {
-                m2 = cloudM2;
-                saveMatchToHistory(cloudM2);
-              }
-            }
-          } else if (cloudMatches) {
-            cloudSyncSuccess = true;
-          }
-        } catch (e) {
-          // use local fallback
-        }
-      }
-
-      setMatch1(m1);
-      setMatch2(m2);
-
-      const active = activeMatchNumber === 1 ? m1 : m2;
-      if (active) {
-        setCurrentMatch(active);
-        saveCurrentMatch(active);
-
-        // Only set selectedPlayerIds from active match on initial load OR explicit active match number change
-        const matchSwitched = prevActiveMatchNumRef.current !== activeMatchNumber;
-        if (!isPlayerSelectionInitializedRef.current || matchSwitched) {
-          if (active.availablePlayerIds && active.availablePlayerIds.length > 0) {
-            setSelectedPlayerIds(active.availablePlayerIds);
-          }
-          isPlayerSelectionInitializedRef.current = true;
-          prevActiveMatchNumRef.current = activeMatchNumber;
-        }
-      }
-
-      setLastSyncTime(new Date());
-      setSyncStatus(cloudSyncSuccess ? 'Live Synced' : 'Local Storage');
-      if (!silent) setIsSyncing(false);
-    },
-    [todayStr, activeMatchNumber, setCurrentMatch, setSelectedPlayerIds]
-  );
-
-  // Initial load and Realtime sync subscription
+  // Populate scoreboard states when currentMatch changes
   useEffect(() => {
-    loadMatches();
-
-    // Subscribe to cloud / broadcast updates
-    const unsubscribe = subscribeToMatchUpdates(todayStr, (updatedMatch) => {
-      if (updatedMatch.matchNumber === 2) {
-        setMatch2(updatedMatch);
-      } else {
-        setMatch1(updatedMatch);
-      }
-
-      if (
-        (activeMatchNumber === 1 && (updatedMatch.matchNumber === 1 || !updatedMatch.matchNumber)) ||
-        (activeMatchNumber === 2 && updatedMatch.matchNumber === 2)
-      ) {
-        setCurrentMatch(updatedMatch);
-        saveCurrentMatch(updatedMatch);
-      }
-
-      setLastSyncTime(new Date());
-    });
-
-    // Background polling every 10 seconds for multi-device sync (only if online & cloud reachable)
-    const pollInterval = setInterval(() => {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      if (!isSupabaseAvailable()) return;
-      loadMatches(true);
-    }, 10000);
-
-    return () => {
-      unsubscribe();
-      clearInterval(pollInterval);
-    };
-  }, [todayStr, activeMatchNumber]);
-
-  // Sync active match to current view
-  useEffect(() => {
-    const target = activeMatchNumber === 1 ? match1 : match2;
-    setCurrentMatch(target);
-    if (target?.scorecard) {
-      setTeamAScore(target.scorecard.teamAScore);
-      setTeamBScore(target.scorecard.teamBScore);
-      setPlayerStats(target.scorecard.playerStats || {});
-      setWinnerTeamId(target.winnerTeamId || null);
+    if (currentMatch?.scorecard) {
+      setTeamAScore(currentMatch.scorecard.teamAScore);
+      setTeamBScore(currentMatch.scorecard.teamBScore);
+      setPlayerStats(currentMatch.scorecard.playerStats || {});
+      setWinnerTeamId(currentMatch.winnerTeamId || null);
     } else {
       setTeamAScore({ runs: 0, wickets: 0, overs: 0 });
       setTeamBScore({ runs: 0, wickets: 0, overs: 0 });
       setPlayerStats({});
       setWinnerTeamId(null);
     }
-  }, [activeMatchNumber, match1, match2]);
+  }, [currentMatch]);
+
+  // Keep attendance selection synced with match's available players
+  useEffect(() => {
+    if (currentMatch?.availablePlayerIds && currentMatch.availablePlayerIds.length > 0) {
+      setSelectedPlayerIds(currentMatch.availablePlayerIds);
+    }
+  }, [currentMatch?.id]);
 
   const handleTogglePlayer = (id: string) => {
     if (selectedPlayerIds.includes(id)) {
@@ -231,33 +119,26 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
 
   const commitAndBroadcastMatch = async (match: MatchSession) => {
     setCurrentMatch(match);
-    if (match.matchNumber === 2) {
-      setMatch2(match);
-    } else {
-      setMatch1(match);
-    }
     saveCurrentMatch(match);
     saveMatchToHistory(match);
     await syncMatchToSupabase(match);
-    setLastSyncTime(new Date());
   };
 
-  const handleMakeTeams = async (forceMatchNumber?: 1 | 2) => {
+  const handleMakeTeams = async () => {
     const available = activePlayers.filter((p) => selectedPlayerIds.includes(p.id));
     if (available.length < 4) {
       alert('Please select at least 4 available players.');
       return;
     }
 
-    const targetMatchNumber = forceMatchNumber || activeMatchNumber;
     const history = getMatchHistory();
     const result = generateTeams(available, history, useJokerOption);
 
-    const matchDate = todayStr;
+    const matchDate = getTodayIsoDate();
     const newMatch: MatchSession = {
-      id: `match-${matchDate}-${targetMatchNumber}-${Date.now()}`,
+      id: `match-${matchDate}-${Date.now()}`,
       date: matchDate,
-      matchNumber: targetMatchNumber,
+      matchNumber: 1,
       availablePlayerIds: selectedPlayerIds,
       teamA: result.teamA,
       teamB: result.teamB,
@@ -272,38 +153,6 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
 
     await commitAndBroadcastMatch(newMatch);
     setIsPlayerSelectorExpanded(false);
-
-    confetti({
-      particleCount: 50,
-      spread: 70,
-      origin: { y: 0.6 },
-    });
-  };
-
-  const handleReuseMatch1TeamsForMatch2 = async () => {
-    if (!match1 || !match1.teamA || !match1.teamB) {
-      alert('Match 1 teams are not yet generated.');
-      return;
-    }
-
-    const newMatch: MatchSession = {
-      id: `match-${todayStr}-2-${Date.now()}`,
-      date: todayStr,
-      matchNumber: 2,
-      availablePlayerIds: match1.availablePlayerIds,
-      teamA: { ...match1.teamA },
-      teamB: { ...match1.teamB },
-      joker: match1.joker ? { ...match1.joker } : null,
-      limitations: match1.limitations || [],
-      isLocked: false,
-      tossResult: null,
-      winnerTeamId: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    await commitAndBroadcastMatch(newMatch);
-    setActiveMatchNumber(2);
 
     confetti({
       particleCount: 50,
@@ -387,25 +236,15 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
   const handleStartNewMatch = async () => {
     if (
       confirm(
-        `Reset current Match ${activeMatchNumber}? Teams and scores for this match will be reset, but history is retained.`
+        "Reset today's match? Teams and scores for today will be reset for a fresh generation. (Previous match is retained in history)."
       )
     ) {
-      const freshMatch: MatchSession = {
-        id: `match-${todayStr}-${activeMatchNumber}-${Date.now()}`,
-        date: todayStr,
-        matchNumber: activeMatchNumber,
-        availablePlayerIds: selectedPlayerIds,
-        teamA: null,
-        teamB: null,
-        joker: null,
-        limitations: [],
-        isLocked: false,
-        tossResult: null,
-        winnerTeamId: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      await commitAndBroadcastMatch(freshMatch);
+      if (currentMatch) {
+        saveMatchToHistory(currentMatch);
+      }
+      clearCurrentMatch();
+      setCurrentMatch(null);
+      setIsPlayerSelectorExpanded(true);
     }
   };
 
@@ -488,153 +327,81 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
       ? [...currentMatch.teamA.players, ...currentMatch.teamB.players]
       : [];
 
+  const isTeamsGenerated = Boolean(currentMatch && currentMatch.teamA && currentMatch.teamB);
+
   return (
     <div className="space-y-5 pb-24 max-w-md mx-auto px-4 pt-4 animate-fade-in">
       {/* Real-time Multi-Device Sync Header Bar */}
       <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-3.5 shadow-md flex items-center justify-between">
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2.5">
           <div className="relative flex h-3 w-3">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-turf-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-3 w-3 bg-turf-500"></span>
           </div>
           <div>
-            <div className="text-[10px] font-black uppercase text-turf-400 tracking-wider flex items-center space-x-1">
-              <span>{syncStatus.toUpperCase()}</span>
+            <div className="text-[10px] font-black uppercase text-turf-400 tracking-wider flex items-center space-x-1.5">
+              <span>LIVE CLOUD SYNCED</span>
               <span className="text-stadium-500">•</span>
-              <span className="text-stadium-300 font-mono">{lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <span className="text-stadium-300 font-mono">
+                {lastSyncedTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
             </div>
             <div className="text-xs text-stadium-400 font-medium">
-              Auto-synced for Vasu, Vinodh Sir, RK Sir & All Faculty
+              Vasu, Vinodh Sir, RK Sir & Faculty Devices
             </div>
           </div>
         </div>
 
         <button
-          onClick={() => loadMatches(false)}
-          disabled={isSyncing}
-          className="p-2 rounded-xl bg-stadium-800 hover:bg-stadium-700 border border-stadium-700 text-stadium-200 transition-all flex items-center space-x-1 text-xs font-bold"
+          id="today-match-sync-btn"
+          onClick={() => onRefresh && onRefresh()}
+          disabled={isRefreshing}
+          className="p-2 px-3 rounded-xl bg-stadium-800 hover:bg-stadium-700 border border-turf-500/30 text-stadium-200 transition-all flex items-center space-x-1.5 text-xs font-bold active:scale-95 shadow-sm"
           title="Refresh match details from cloud"
         >
-          <RefreshCw className={`w-3.5 h-3.5 text-turf-400 ${isSyncing ? 'animate-spin' : ''}`} />
-          <span>SYNC</span>
+          <RefreshCw className={`w-3.5 h-3.5 text-turf-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <span>{isRefreshing ? 'SYNCING...' : 'SYNC'}</span>
         </button>
       </div>
 
-      {/* MATCH 1 / MATCH 2 SELECTOR BAR */}
-      <div className="bg-stadium-900/90 border border-stadium-800 p-1.5 rounded-2xl flex items-center space-x-1.5 shadow-lg">
-        <button
-          onClick={() => setActiveMatchNumber(1)}
-          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center space-x-1.5 ${
-            activeMatchNumber === 1
-              ? 'bg-gradient-to-r from-turf-500 to-turf-600 text-stadium-950 shadow-md shadow-turf-500/20'
-              : 'text-stadium-300 hover:bg-stadium-800'
-          }`}
-        >
-          <span>MATCH 1</span>
-          {match1?.teamA && (
-            <span
-              className={`text-[9px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                activeMatchNumber === 1
-                  ? 'bg-stadium-950/30 text-stadium-950'
-                  : 'bg-turf-500/20 text-turf-400'
-              }`}
-            >
-              READY
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setActiveMatchNumber(2)}
-          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center space-x-1.5 ${
-            activeMatchNumber === 2
-              ? 'bg-gradient-to-r from-turf-500 to-turf-600 text-stadium-950 shadow-md shadow-turf-500/20'
-              : 'text-stadium-300 hover:bg-stadium-800'
-          }`}
-        >
-          <span>MATCH 2</span>
-          {match2?.teamA ? (
-            <span
-              className={`text-[9px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                activeMatchNumber === 2
-                  ? 'bg-stadium-950/30 text-stadium-950'
-                  : 'bg-gold-500/20 text-gold-400'
-              }`}
-            >
-              READY
-            </span>
-          ) : (
-            <span className="text-[9px] px-1.5 py-0.2 rounded-full font-medium bg-stadium-800 text-stadium-400">
-              OPTIONAL
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* MATCH DATE & HEADER INFO */}
+      {/* MATCH DATE & HEADER INFO (SINGLE DAILY MATCH FOCUS) */}
       <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-4 flex items-center justify-between shadow-md">
         <div>
           <div className="text-[10px] font-black uppercase text-turf-400 tracking-widest flex items-center space-x-1.5">
-            <span>TODAY'S MATCH {activeMatchNumber}</span>
+            <span>TODAY'S MATCH</span>
             <span className="text-stadium-600">•</span>
             <span className="text-gold-400">FACULTY CRICKET</span>
           </div>
           <div className="text-lg font-black text-white">{formatDateDisplay(todayStr)}</div>
         </div>
 
-        <button
-          onClick={handleStartNewMatch}
-          className="px-3 py-1.5 bg-stadium-800 hover:bg-stadium-700 text-stadium-200 rounded-xl text-xs font-bold border border-stadium-700 transition-all flex items-center space-x-1"
-        >
-          <PlusCircle className="w-3.5 h-3.5" />
-          <span>RESET M{activeMatchNumber}</span>
-        </button>
+        {isTeamsGenerated && (
+          <button
+            onClick={handleStartNewMatch}
+            className="px-3 py-1.5 bg-stadium-800 hover:bg-stadium-700 text-stadium-200 rounded-xl text-xs font-bold border border-stadium-700 transition-all flex items-center space-x-1"
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            <span>RESET MATCH</span>
+          </button>
+        )}
       </div>
 
-      {/* QUICK MATCH 2 HELPER CARD (IF IN MATCH 2 AND NOT YET GENERATED) */}
-      {activeMatchNumber === 2 && !match2?.teamA && match1?.teamA && (
-        <div className="bg-gradient-to-br from-stadium-900 via-stadium-900 to-gold-950/30 border border-gold-500/30 rounded-3xl p-4 shadow-xl space-y-3">
-          <div className="flex items-center space-x-2">
-            <Zap className="w-5 h-5 text-gold-400" />
-            <h3 className="font-extrabold text-white text-sm">Quick Setup for Match 2</h3>
-          </div>
-          <p className="text-xs text-stadium-300">
-            You can either reuse the exact same balanced teams from Match 1 or generate freshly shuffled teams for
-            Match 2.
-          </p>
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              onClick={handleReuseMatch1TeamsForMatch2}
-              className="py-2.5 px-3 rounded-xl bg-stadium-800 hover:bg-stadium-700 border border-gold-500/40 text-gold-300 font-bold text-xs flex items-center justify-center space-x-1.5 transition-all shadow-md"
-            >
-              <Copy className="w-3.5 h-3.5" />
-              <span>Reuse M1 Teams</span>
-            </button>
-            <button
-              onClick={() => handleMakeTeams(2)}
-              className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-turf-500 to-turf-600 text-stadium-950 font-black text-xs flex items-center justify-center space-x-1.5 transition-all shadow-md shadow-turf-500/20"
-            >
-              <RotateCw className="w-3.5 h-3.5" />
-              <span>New Teams for M2</span>
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* MATCH TEAMS OR PLAYER SELECTOR DEPENDING ON STATE */}
-      {currentMatch && currentMatch.teamA && currentMatch.teamB ? (
+      {isTeamsGenerated && currentMatch?.teamA && currentMatch?.teamB ? (
         <div className="space-y-6 animate-fade-in">
           {/* Live Synced Match Banner */}
           <div className="bg-gradient-to-r from-turf-500/20 via-stadium-900 to-turf-500/20 border border-turf-500/40 rounded-2xl p-3 flex items-center justify-between shadow-md">
             <div className="flex items-center space-x-2">
               <CheckCircle2 className="w-5 h-5 text-turf-400" />
               <div>
-                <div className="text-xs font-black text-white">MATCH {activeMatchNumber} TEAMS GENERATED & SHARED</div>
-                <div className="text-[10px] text-turf-400 font-bold">Live Synced for Vasu, Vinodh Sir, RK Sir & Faculty</div>
+                <div className="text-xs font-black text-white">TODAY'S TEAMS BALANCED & READY</div>
+                <div className="text-[10px] text-turf-400 font-bold">
+                  Reflected on everyone's phone for {formatDateDisplay(todayStr)}
+                </div>
               </div>
             </div>
             <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-turf-500 text-stadium-950 uppercase tracking-wider">
-              TEAMS READY
+              READY
             </span>
           </div>
 
@@ -788,7 +555,7 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
                   className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-turf-500 via-turf-600 to-emerald-600 text-stadium-950 font-black text-base tracking-wider shadow-lg hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-40 flex items-center justify-center space-x-2"
                 >
                   <Play className="w-4 h-4 fill-current" />
-                  <span>RE-GENERATE TEAMS FOR MATCH {activeMatchNumber} ({selectedPlayerIds.length} PLAYERS)</span>
+                  <span>RE-GENERATE TODAY'S TEAMS ({selectedPlayerIds.length} PLAYERS)</span>
                 </button>
               </div>
             )}
@@ -796,9 +563,9 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
         </div>
       ) : (
         /* NO TEAMS GENERATED YET - EXPANDED GROUND CHECK-IN PRIMARY VIEW */
-        <div className="space-y-3">
-          <div className="bg-turf-500/10 border border-turf-500/30 rounded-2xl p-3 text-center text-xs text-turf-300 font-bold">
-            🏏 Select present players on the ground below and tap MAKE TEAMS to generate Match {activeMatchNumber}.
+        <div className="space-y-4">
+          <div className="bg-turf-500/10 border border-turf-500/30 rounded-2xl p-3.5 text-center text-xs text-turf-300 font-bold">
+            🏏 Select present players on the ground below and tap MAKE TEAMS to generate balanced teams.
           </div>
 
           <PlayerSelector
@@ -827,230 +594,234 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
             className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-turf-500 via-turf-600 to-emerald-600 text-stadium-950 font-black text-lg tracking-wider shadow-xl shadow-turf-500/20 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-40 flex items-center justify-center space-x-2"
           >
             <Play className="w-5 h-5 fill-current" />
-            <span>MAKE TEAMS FOR MATCH {activeMatchNumber}</span>
+            <span>MAKE TODAY'S TEAMS ({selectedPlayerIds.length} PLAYERS)</span>
           </button>
         </div>
       )}
 
-          {/* TOSS SECTION */}
-          <div className="pt-4 border-t border-stadium-800 space-y-2">
-            <div className="text-xs font-bold text-stadium-400 uppercase tracking-wider px-1">
-              Match {activeMatchNumber} Ground Toss
+      {/* TOSS SECTION */}
+      <div className="pt-4 border-t border-stadium-800 space-y-2">
+        <div className="text-xs font-bold text-stadium-400 uppercase tracking-wider px-1">
+          Today's Ground Toss
+        </div>
+        <TossCoin onTossComplete={handleTossComplete} />
+      </div>
+
+      {/* INLINE MATCH SCOREBOARD & STATS SECTION */}
+      <div className="pt-4 border-t border-stadium-800 space-y-4">
+        <div className="bg-gradient-to-br from-stadium-900 to-stadium-950 border border-gold-500/30 rounded-3xl p-5 shadow-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-stadium-800 pb-2">
+            <div className="flex items-center space-x-2">
+              <Trophy className="w-5 h-5 text-gold-400" />
+              <h3 className="font-extrabold text-white text-base tracking-wider">
+                TODAY'S MATCH SCOREBOARD & RATINGS
+              </h3>
             </div>
-            <TossCoin onTossComplete={handleTossComplete} />
+            <span className="text-[10px] text-turf-400 font-extrabold uppercase">
+              Live Cloud Sync
+            </span>
           </div>
 
-          {/* INLINE MATCH SCOREBOARD & STATS SECTION */}
-          <div className="pt-4 border-t border-stadium-800 space-y-4">
-            <div className="bg-gradient-to-br from-stadium-900 to-stadium-950 border border-gold-500/30 rounded-3xl p-5 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between border-b border-stadium-800 pb-2">
-                <div className="flex items-center space-x-2">
-                  <Trophy className="w-5 h-5 text-gold-400" />
-                  <h3 className="font-extrabold text-white text-base tracking-wider">
-                    MATCH {activeMatchNumber} SCOREBOARD & RATINGS
-                  </h3>
-                </div>
-                <span className="text-[10px] text-turf-400 font-extrabold uppercase">
-                  Live Cloud Sync
-                </span>
+          {saveMessage && (
+            <div className="p-2.5 bg-turf-500/20 border border-turf-500/40 rounded-xl text-center text-xs font-bold text-turf-400 flex items-center justify-center space-x-1">
+              <span>{saveMessage}</span>
+            </div>
+          )}
+
+          {/* Team Scores Input Boxes */}
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="bg-stadium-900 p-3 rounded-2xl border border-turf-500/30 space-y-2">
+              <span className="font-extrabold text-turf-400 block truncate">
+                {currentMatch?.teamA?.name || 'Team A'} Score
+              </span>
+              <div className="flex items-center space-x-1.5">
+                <input
+                  type="number"
+                  placeholder="Runs"
+                  value={teamAScore.runs || ''}
+                  onChange={(e) => setTeamAScore({ ...teamAScore, runs: Number(e.target.value) })}
+                  className="w-full bg-stadium-950 border border-stadium-700 rounded-lg p-2 font-black text-center text-white"
+                />
+                <span>/</span>
+                <input
+                  type="number"
+                  placeholder="Wickets"
+                  value={teamAScore.wickets || ''}
+                  onChange={(e) => setTeamAScore({ ...teamAScore, wickets: Number(e.target.value) })}
+                  className="w-full bg-stadium-950 border border-stadium-700 rounded-lg p-2 font-black text-center text-white"
+                />
               </div>
+            </div>
 
-              {saveMessage && (
-                <div className="p-2.5 bg-turf-500/20 border border-turf-500/40 rounded-xl text-center text-xs font-bold text-turf-400 flex items-center justify-center space-x-1">
-                  <span>{saveMessage}</span>
-                </div>
-              )}
-
-              {/* Team Scores Input Boxes */}
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="bg-stadium-900 p-3 rounded-2xl border border-turf-500/30 space-y-2">
-                  <span className="font-extrabold text-turf-400 block truncate">{currentMatch?.teamA?.name || 'Team A'} Score</span>
-                  <div className="flex items-center space-x-1.5">
-                    <input
-                      type="number"
-                      placeholder="Runs"
-                      value={teamAScore.runs || ''}
-                      onChange={(e) => setTeamAScore({ ...teamAScore, runs: Number(e.target.value) })}
-                      className="w-full bg-stadium-950 border border-stadium-700 rounded-lg p-2 font-black text-center text-white"
-                    />
-                    <span>/</span>
-                    <input
-                      type="number"
-                      placeholder="Wickets"
-                      value={teamAScore.wickets || ''}
-                      onChange={(e) => setTeamAScore({ ...teamAScore, wickets: Number(e.target.value) })}
-                      className="w-full bg-stadium-950 border border-stadium-700 rounded-lg p-2 font-black text-center text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-stadium-900 p-3 rounded-2xl border border-gold-500/30 space-y-2">
-                  <span className="font-extrabold text-gold-400 block truncate">{currentMatch?.teamB?.name || 'Team B'} Score</span>
-                  <div className="flex items-center space-x-1.5">
-                    <input
-                      type="number"
-                      placeholder="Runs"
-                      value={teamBScore.runs || ''}
-                      onChange={(e) => setTeamBScore({ ...teamBScore, runs: Number(e.target.value) })}
-                      className="w-full bg-stadium-950 border border-stadium-700 rounded-lg p-2 font-black text-center text-white"
-                    />
-                    <span>/</span>
-                    <input
-                      type="number"
-                      placeholder="Wickets"
-                      value={teamBScore.wickets || ''}
-                      onChange={(e) => setTeamBScore({ ...teamBScore, wickets: Number(e.target.value) })}
-                      className="w-full bg-stadium-950 border border-stadium-700 rounded-lg p-2 font-black text-center text-white"
-                    />
-                  </div>
-                </div>
+            <div className="bg-stadium-900 p-3 rounded-2xl border border-gold-500/30 space-y-2">
+              <span className="font-extrabold text-gold-400 block truncate">
+                {currentMatch?.teamB?.name || 'Team B'} Score
+              </span>
+              <div className="flex items-center space-x-1.5">
+                <input
+                  type="number"
+                  placeholder="Runs"
+                  value={teamBScore.runs || ''}
+                  onChange={(e) => setTeamBScore({ ...teamBScore, runs: Number(e.target.value) })}
+                  className="w-full bg-stadium-950 border border-stadium-700 rounded-lg p-2 font-black text-center text-white"
+                />
+                <span>/</span>
+                <input
+                  type="number"
+                  placeholder="Wickets"
+                  value={teamBScore.wickets || ''}
+                  onChange={(e) => setTeamBScore({ ...teamBScore, wickets: Number(e.target.value) })}
+                  className="w-full bg-stadium-950 border border-stadium-700 rounded-lg p-2 font-black text-center text-white"
+                />
               </div>
+            </div>
+          </div>
 
-              {/* Match Winner Selection */}
-              <div className="space-y-1.5 text-xs">
-                <span className="font-bold text-stadium-300">Match Winner:</span>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => setWinnerTeamId('teamA')}
-                    className={`py-2 px-1 rounded-xl font-bold border transition-all text-xs truncate ${
-                      winnerTeamId === 'teamA'
-                        ? 'bg-turf-500 text-stadium-950 border-turf-500 shadow-md font-black'
-                        : 'bg-stadium-950 border-stadium-800 text-stadium-300 hover:border-stadium-700'
-                    }`}
+          {/* Match Winner Selection */}
+          <div className="space-y-1.5 text-xs">
+            <span className="font-bold text-stadium-300">Match Winner:</span>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => setWinnerTeamId('teamA')}
+                className={`py-2 px-1 rounded-xl font-bold border transition-all text-xs truncate ${
+                  winnerTeamId === 'teamA'
+                    ? 'bg-turf-500 text-stadium-950 border-turf-500 shadow-md font-black'
+                    : 'bg-stadium-950 border-stadium-800 text-stadium-300 hover:border-stadium-700'
+                }`}
+              >
+                {currentMatch?.teamA?.name || 'Team A'}
+              </button>
+
+              <button
+                onClick={() => setWinnerTeamId('teamB')}
+                className={`py-2 px-1 rounded-xl font-bold border transition-all text-xs truncate ${
+                  winnerTeamId === 'teamB'
+                    ? 'bg-gold-500 text-stadium-950 border-gold-500 shadow-md font-black'
+                    : 'bg-stadium-950 border-stadium-800 text-stadium-300 hover:border-stadium-700'
+                }`}
+              >
+                {currentMatch?.teamB?.name || 'Team B'}
+              </button>
+
+              <button
+                onClick={() => setWinnerTeamId('TIE')}
+                className={`py-2 px-1 rounded-xl font-bold border transition-all text-xs ${
+                  winnerTeamId === 'TIE'
+                    ? 'bg-purple-500 text-white border-purple-500 shadow-md font-black'
+                    : 'bg-stadium-950 border-stadium-800 text-stadium-300 hover:border-stadium-700'
+                }`}
+              >
+                Tie Match
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 pt-2">
+            <button
+              onClick={() => setShowStatsEntry(!showStatsEntry)}
+              className="flex-1 py-2.5 bg-stadium-800 hover:bg-stadium-700 text-stadium-200 border border-stadium-700 rounded-xl text-xs font-bold transition-all"
+            >
+              {showStatsEntry ? 'Hide Player Stats Entry' : 'Enter Player Stats'}
+            </button>
+
+            <button
+              onClick={handleSaveScoreboard}
+              className="flex-1 py-2.5 bg-gradient-to-r from-turf-500 to-turf-600 text-stadium-950 font-black rounded-xl text-xs shadow-lg shadow-turf-500/20 hover:brightness-110 flex items-center justify-center space-x-1"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Save & Sync All Devices</span>
+            </button>
+          </div>
+
+          {/* INDIVIDUAL PLAYER STATS ENTRY */}
+          {showStatsEntry && (
+            <div className="space-y-3 pt-3 border-t border-stadium-800 max-h-72 overflow-y-auto pr-1">
+              <div className="text-xs font-extrabold text-stadium-300 uppercase">
+                Individual Player Performances
+              </div>
+              {allPlayers.map((player) => {
+                const stat = playerStats[player.id] || {
+                  runsScored: 0,
+                  ballsFaced: 0,
+                  fours: 0,
+                  sixes: 0,
+                  wicketsTaken: 0,
+                  oversBowled: 0,
+                  runsConceded: 0,
+                  catches: 0,
+                };
+
+                return (
+                  <div
+                    key={player.id}
+                    className="bg-stadium-950/80 p-3 rounded-2xl border border-stadium-800 space-y-2 text-xs"
                   >
-                    {currentMatch?.teamA?.name || 'Team A'}
-                  </button>
+                    <div className="flex items-center justify-between">
+                      <span className="font-extrabold text-white">{player.name}</span>
+                      <span className="text-[10px] text-stadium-400 font-bold">
+                        {currentMatch?.teamA?.players.some((p) => p.id === player.id)
+                          ? currentMatch?.teamA?.name
+                          : currentMatch?.teamB?.name}
+                      </span>
+                    </div>
 
-                  <button
-                    onClick={() => setWinnerTeamId('teamB')}
-                    className={`py-2 px-1 rounded-xl font-bold border transition-all text-xs truncate ${
-                      winnerTeamId === 'teamB'
-                        ? 'bg-gold-500 text-stadium-950 border-gold-500 shadow-md font-black'
-                        : 'bg-stadium-950 border-stadium-800 text-stadium-300 hover:border-stadium-700'
-                    }`}
-                  >
-                    {currentMatch?.teamB?.name || 'Team B'}
-                  </button>
-
-                  <button
-                    onClick={() => setWinnerTeamId('TIE')}
-                    className={`py-2 px-1 rounded-xl font-bold border transition-all text-xs ${
-                      winnerTeamId === 'TIE'
-                        ? 'bg-purple-500 text-white border-purple-500 shadow-md font-black'
-                        : 'bg-stadium-950 border-stadium-800 text-stadium-300 hover:border-stadium-700'
-                    }`}
-                  >
-                    Tie Match
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2 pt-2">
-                <button
-                  onClick={() => setShowStatsEntry(!showStatsEntry)}
-                  className="flex-1 py-2.5 bg-stadium-800 hover:bg-stadium-700 text-stadium-200 border border-stadium-700 rounded-xl text-xs font-bold transition-all"
-                >
-                  {showStatsEntry ? 'Hide Player Stats Entry' : 'Enter Player Stats'}
-                </button>
-
-                <button
-                  onClick={handleSaveScoreboard}
-                  className="flex-1 py-2.5 bg-gradient-to-r from-turf-500 to-turf-600 text-stadium-950 font-black rounded-xl text-xs shadow-lg shadow-turf-500/20 hover:brightness-110 flex items-center justify-center space-x-1"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Save & Sync All Devices</span>
-                </button>
-              </div>
-
-              {/* INDIVIDUAL PLAYER STATS ENTRY */}
-              {showStatsEntry && (
-                <div className="space-y-3 pt-3 border-t border-stadium-800 max-h-72 overflow-y-auto pr-1">
-                  <div className="text-xs font-extrabold text-stadium-300 uppercase">
-                    Individual Player Performances
-                  </div>
-                  {allPlayers.map((player) => {
-                    const stat = playerStats[player.id] || {
-                      runsScored: 0,
-                      ballsFaced: 0,
-                      fours: 0,
-                      sixes: 0,
-                      wicketsTaken: 0,
-                      oversBowled: 0,
-                      runsConceded: 0,
-                      catches: 0,
-                    };
-
-                    return (
-                      <div
-                        key={player.id}
-                        className="bg-stadium-950/80 p-3 rounded-2xl border border-stadium-800 space-y-2 text-xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-extrabold text-white">{player.name}</span>
-                          <span className="text-[10px] text-stadium-400 font-bold">
-                            {currentMatch?.teamA?.players.some((p) => p.id === player.id)
-                              ? currentMatch?.teamA?.name
-                              : currentMatch?.teamB?.name}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-1.5 text-[11px]">
-                          <div>
-                            <span className="text-[9px] text-stadium-400 block">Runs</span>
-                            <input
-                              type="number"
-                              value={stat.runsScored || ''}
-                              onChange={(e) =>
-                                handleUpdatePlayerStat(player.id, 'runsScored', Number(e.target.value))
-                              }
-                              placeholder="0"
-                              className="w-full bg-stadium-900 border border-stadium-700 rounded p-1 text-center font-bold text-white"
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-stadium-400 block">Balls</span>
-                            <input
-                              type="number"
-                              value={stat.ballsFaced || ''}
-                              onChange={(e) =>
-                                handleUpdatePlayerStat(player.id, 'ballsFaced', Number(e.target.value))
-                              }
-                              placeholder="0"
-                              className="w-full bg-stadium-900 border border-stadium-700 rounded p-1 text-center font-bold text-white"
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-stadium-400 block">Wickets</span>
-                            <input
-                              type="number"
-                              value={stat.wicketsTaken || ''}
-                              onChange={(e) =>
-                                handleUpdatePlayerStat(player.id, 'wicketsTaken', Number(e.target.value))
-                              }
-                              placeholder="0"
-                              className="w-full bg-stadium-900 border border-stadium-700 rounded p-1 text-center font-bold text-white"
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-stadium-400 block">Catches</span>
-                            <input
-                              type="number"
-                              value={stat.catches || ''}
-                              onChange={(e) =>
-                                handleUpdatePlayerStat(player.id, 'catches', Number(e.target.value))
-                              }
-                              placeholder="0"
-                              className="w-full bg-stadium-900 border border-stadium-700 rounded p-1 text-center font-bold text-white"
-                            />
-                          </div>
-                        </div>
+                    <div className="grid grid-cols-4 gap-1.5 text-[11px]">
+                      <div>
+                        <span className="text-[9px] text-stadium-400 block">Runs</span>
+                        <input
+                          type="number"
+                          value={stat.runsScored || ''}
+                          onChange={(e) =>
+                            handleUpdatePlayerStat(player.id, 'runsScored', Number(e.target.value))
+                          }
+                          placeholder="0"
+                          className="w-full bg-stadium-900 border border-stadium-700 rounded p-1 text-center font-bold text-white"
+                        />
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                      <div>
+                        <span className="text-[9px] text-stadium-400 block">Balls</span>
+                        <input
+                          type="number"
+                          value={stat.ballsFaced || ''}
+                          onChange={(e) =>
+                            handleUpdatePlayerStat(player.id, 'ballsFaced', Number(e.target.value))
+                          }
+                          placeholder="0"
+                          className="w-full bg-stadium-900 border border-stadium-700 rounded p-1 text-center font-bold text-white"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-stadium-400 block">Wickets</span>
+                        <input
+                          type="number"
+                          value={stat.wicketsTaken || ''}
+                          onChange={(e) =>
+                            handleUpdatePlayerStat(player.id, 'wicketsTaken', Number(e.target.value))
+                          }
+                          placeholder="0"
+                          className="w-full bg-stadium-900 border border-stadium-700 rounded p-1 text-center font-bold text-white"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-stadium-400 block">Catches</span>
+                        <input
+                          type="number"
+                          value={stat.catches || ''}
+                          onChange={(e) =>
+                            handleUpdatePlayerStat(player.id, 'catches', Number(e.target.value))
+                          }
+                          placeholder="0"
+                          className="w-full bg-stadium-900 border border-stadium-700 rounded p-1 text-center font-bold text-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
+        </div>
+      </div>
 
       {/* PRINTABLE / SHAREABLE MATCH CARD MODAL */}
       {currentMatch && (

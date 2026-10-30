@@ -2,6 +2,7 @@ import type { Player } from '../types/player';
 import type { MatchSession, TossRecord } from '../types/match';
 import type { AppSettings } from '../types/settings';
 import { INITIAL_PLAYERS } from '../data/defaultPlayers';
+import { getTodayIsoDate } from '../utils/dates';
 
 const KEYS = {
   PLAYERS: 'cricmasters_players',
@@ -40,13 +41,48 @@ export function saveStoredPlayers(players: Player[]): void {
   localStorage.setItem(KEYS.PLAYERS, JSON.stringify(players));
 }
 
-export function getCurrentMatch(): MatchSession | null {
+/**
+ * Returns the current active match.
+ * If the match stored in localStorage is from a previous day (or past 11:59PM),
+ * it is automatically archived to history and currentMatch is cleared for a fresh new day.
+ */
+export function getCurrentMatch(autoExpire: boolean = true): MatchSession | null {
   try {
     const raw = localStorage.getItem(KEYS.CURRENT_MATCH);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const match = JSON.parse(raw) as MatchSession;
+    if (!match) return null;
+
+    if (autoExpire) {
+      const today = getTodayIsoDate();
+      if (match.date && match.date !== today) {
+        // Match belongs to yesterday or earlier: archive to history and clear current match
+        saveMatchToHistory(match);
+        localStorage.removeItem(KEYS.CURRENT_MATCH);
+        return null;
+      }
+    }
+
+    return match;
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * Returns today's active match if one exists.
+ */
+export function getTodayMatch(date: string = getTodayIsoDate()): MatchSession | null {
+  const current = getCurrentMatch(true);
+  if (current && current.date === date) {
+    return current;
+  }
+  const history = getMatchHistory();
+  const found = history
+    .slice()
+    .reverse()
+    .find((m) => m.date === date && m.teamA && m.teamB);
+  return found || null;
 }
 
 export function saveCurrentMatch(match: MatchSession): void {

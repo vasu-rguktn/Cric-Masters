@@ -181,10 +181,10 @@ export function recordCloudFailure(err: any): void {
     errMsg.includes('ERR_CONNECTION_REFUSED');
 
   if (isNetwork) {
-    const cooldownMs = Math.min(60000, 15000 * Math.pow(2, Math.min(consecutiveFailures - 1, 2)));
+    const cooldownMs = Math.min(2500, 1000 * consecutiveFailures);
     failureCooldownUntil = Date.now() + cooldownMs;
     if (consecutiveFailures === 1) {
-      console.info(`[Cric Masters] Cloud database is temporarily unreachable (${errMsg}). Operating smoothly in offline local mode.`);
+      console.info(`[Cric Masters] Cloud database is temporarily unreachable (${errMsg}). Retrying smoothly in background.`);
     }
   } else {
     console.warn('[Cric Masters] Supabase notice:', errMsg);
@@ -472,6 +472,14 @@ export async function fetchTodayMatchesFromSupabase(date: string): Promise<Match
   }
 }
 
+export async function fetchLatestTodayMatchFromSupabase(date: string): Promise<MatchSession | null> {
+  const matches = await fetchTodayMatchesFromSupabase(date);
+  if (!matches || matches.length === 0) return null;
+  // Return the latest match that has teams generated, or the most recent match for this date
+  const readyMatch = matches.find((m) => m.teamA && m.teamB);
+  return readyMatch || matches[0] || null;
+}
+
 export async function fetchMatchHistoryFromSupabase(limit: number = 100): Promise<MatchSession[]> {
   if (!isCloudAvailable()) return [];
   const client = getSupabaseClient();
@@ -644,28 +652,29 @@ export function subscribeToMatchUpdates(
     window.addEventListener('storage', handleStorage);
   }
 
-  // 3. Supabase Realtime Subscription
+  // 3. Supabase Realtime Subscription (Reliable in-memory date filter)
   const client = getSupabaseClient();
   let supabaseSubscription: any = null;
 
   if (client && isCloudAvailable()) {
     try {
       supabaseSubscription = client
-        .channel(`public:daily_matches:date=${date}`)
+        .channel(`public:daily_matches_realtime_${date}`)
         .on(
           'postgres_changes',
           {
             event: '*',
             schema: 'public',
             table: 'daily_matches',
-            filter: `date=eq.${date}`,
           },
           (payload: any) => {
             if (payload.new) {
               const updatedMatch = mapRowToMatchSession(payload.new);
-              saveCurrentMatch(updatedMatch);
-              saveMatchToHistory(updatedMatch);
-              onMatchReceived(updatedMatch);
+              if (updatedMatch.date === date) {
+                saveCurrentMatch(updatedMatch);
+                saveMatchToHistory(updatedMatch);
+                onMatchReceived(updatedMatch);
+              }
             }
           }
         )
@@ -673,7 +682,7 @@ export function subscribeToMatchUpdates(
           if (status === 'SUBSCRIBED') {
             recordCloudSuccess();
           } else if (status === 'CHANNEL_ERROR') {
-            recordCloudFailure('Realtime match subscription error');
+            console.warn('[Cric Masters] Realtime channel status: CHANNEL_ERROR');
           }
         });
     } catch (e) {

@@ -2,10 +2,21 @@ import React, { useState, useEffect } from 'react';
 import type { Player } from '../types/player';
 import type { MatchSession } from '../types/match';
 import { TossCoin } from '../components/TossCoin';
-import { Users, Play, Calendar, ArrowRight, ShieldCheck, Clock, Star, Target } from 'lucide-react';
-import { getTodayIsoDate } from '../utils/dates';
-import { getMatchHistory, getTodayMatchesByDate, saveMatchToHistory } from '../services/storageService';
-import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates, isSupabaseAvailable } from '../services/supabaseService';
+import {
+  Users,
+  Play,
+  Calendar,
+  ArrowRight,
+  ShieldCheck,
+  Clock,
+  Star,
+  Target,
+  RefreshCw,
+  CheckCircle2,
+  Sparkles,
+} from 'lucide-react';
+import { getTodayIsoDate, formatDateDisplay } from '../utils/dates';
+import { getMatchHistory } from '../services/storageService';
 
 interface HomeProps {
   players: Player[];
@@ -13,6 +24,9 @@ interface HomeProps {
   currentMatch: MatchSession | null;
   onNavigate: (tab: 'home' | 'today' | 'players' | 'history' | 'score' | 'settings') => void;
   onMakeTeamsClick: () => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
+  lastSyncedTime?: Date;
 }
 
 export const Home: React.FC<HomeProps> = ({
@@ -21,74 +35,31 @@ export const Home: React.FC<HomeProps> = ({
   currentMatch,
   onNavigate,
   onMakeTeamsClick,
+  onRefresh,
+  isRefreshing = false,
+  lastSyncedTime = new Date(),
 }) => {
   const [now, setNow] = useState<Date>(new Date());
-  const [match1, setMatch1] = useState<MatchSession | null>(null);
-  const [match2, setMatch2] = useState<MatchSession | null>(null);
   const [lastMatchStats, setLastMatchStats] = useState<{
     batsman: { name: string; runs: number; balls: number } | null;
     bowler: { name: string; wickets: number; runs: number } | null;
   } | null>(null);
 
-  const todayStr = currentMatch?.date || getTodayIsoDate();
+  const todayStr = getTodayIsoDate();
+  const isTodayMatchReady = Boolean(
+    currentMatch &&
+      currentMatch.date === todayStr &&
+      currentMatch.teamA &&
+      currentMatch.teamB
+  );
 
+  // Live Clock updater
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const loadTodayMatches = async () => {
-    const local = getTodayMatchesByDate(todayStr);
-    let m1 = local.match1;
-    let m2 = local.match2;
-
-    try {
-      const cloudMatches = await fetchTodayMatchesFromSupabase(todayStr);
-      if (cloudMatches && cloudMatches.length > 0) {
-        const cloudM1 =
-          cloudMatches.find((m) => m.matchNumber === 1 || !m.matchNumber) ||
-          cloudMatches[0];
-        const cloudM2 = cloudMatches.find((m) => m.matchNumber === 2);
-        if (cloudM1) {
-          m1 = cloudM1;
-          saveMatchToHistory(cloudM1);
-        }
-        if (cloudM2) {
-          m2 = cloudM2;
-          saveMatchToHistory(cloudM2);
-        }
-      }
-    } catch (e) {
-      // use local
-    }
-
-    setMatch1(m1);
-    setMatch2(m2);
-  };
-
-  useEffect(() => {
-    loadTodayMatches();
-
-    const unsubscribe = subscribeToMatchUpdates(todayStr, (updatedMatch) => {
-      if (updatedMatch.matchNumber === 2) {
-        setMatch2(updatedMatch);
-      } else {
-        setMatch1(updatedMatch);
-      }
-    });
-
-    const interval = setInterval(() => {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      if (!isSupabaseAvailable()) return;
-      loadTodayMatches();
-    }, 10000);
-
-    return () => {
-      unsubscribe();
-      clearInterval(interval);
-    };
-  }, [todayStr]);
-
+  // Previous Match Star Player calculation
   useEffect(() => {
     const history = getMatchHistory();
     const lastValidMatch = history
@@ -152,27 +123,54 @@ export const Home: React.FC<HomeProps> = ({
   });
 
   return (
-    <div className="space-y-6 pb-20 max-w-md mx-auto px-4 pt-4 animate-fade-in">
-      {/* Live Date & Time Bar */}
-      <div className="bg-stadium-900 border border-stadium-800 rounded-2xl px-4 py-2.5 flex items-center justify-between shadow-md text-xs">
-        <div className="flex items-center space-x-1.5 text-turf-400 font-extrabold tracking-wider">
-          <Calendar className="w-4 h-4 text-turf-400" />
-          <span>{formattedDate}</span>
+    <div className="space-y-6 pb-24 max-w-md mx-auto px-4 pt-4 animate-fade-in">
+      {/* Live Date, Time & Immediate Cloud Sync Bar */}
+      <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-3.5 shadow-xl flex items-center justify-between gap-2">
+        <div className="flex items-center space-x-2.5 overflow-hidden">
+          <div className="p-2 rounded-2xl bg-turf-500/10 border border-turf-500/30 text-turf-400">
+            <Calendar className="w-5 h-5 text-turf-400" />
+          </div>
+          <div className="truncate">
+            <div className="text-xs font-black text-white truncate tracking-wide">
+              {formattedDate}
+            </div>
+            <div className="flex items-center space-x-2 text-[10px] text-stadium-400 mt-0.5">
+              <span className="font-mono text-gold-400 font-bold flex items-center space-x-1">
+                <Clock className="w-3 h-3 text-gold-400" />
+                <span>{formattedTime}</span>
+              </span>
+              <span>•</span>
+              <span className="text-turf-400 flex items-center space-x-1 font-bold">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-turf-400 animate-pulse" />
+                <span>Synced {lastSyncedTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center space-x-1 text-gold-400 font-mono font-black bg-stadium-950 px-2.5 py-1 rounded-lg border border-stadium-800">
-          <Clock className="w-3.5 h-3.5 text-gold-400" />
-          <span>{formattedTime}</span>
-        </div>
+
+        {/* Sync / Refresh Button */}
+        <button
+          id="home-sync-btn"
+          onClick={() => onRefresh && onRefresh()}
+          disabled={isRefreshing}
+          className="px-3.5 py-2 rounded-2xl bg-gradient-to-r from-stadium-800 to-stadium-850 hover:from-stadium-750 hover:to-stadium-800 border border-turf-500/30 text-stadium-100 hover:text-white transition-all flex items-center space-x-1.5 text-xs font-black shadow-md active:scale-95"
+          title="Refresh today's match from cloud"
+        >
+          <RefreshCw
+            className={`w-4 h-4 text-turf-400 ${isRefreshing ? 'animate-spin' : ''}`}
+          />
+          <span>{isRefreshing ? 'SYNCING...' : 'SYNC'}</span>
+        </button>
       </div>
 
-      {/* Hero Card featuring cric.png logo */}
+      {/* Hero Card with Cric Logo */}
       <div className="bg-stadium-900 border border-turf-500/40 rounded-3xl p-5 shadow-2xl relative overflow-hidden text-center space-y-4">
         <div className="flex justify-center">
           <div className="p-2.5 bg-stadium-950 rounded-3xl border border-turf-500/30 shadow-xl">
             <img
               src="./cric.png"
               alt="Cric Masters Logo"
-              className="w-32 h-32 object-contain drop-shadow-2xl hover:scale-105 transition-transform"
+              className="w-28 h-28 object-contain drop-shadow-2xl hover:scale-105 transition-transform"
             />
           </div>
         </div>
@@ -183,143 +181,180 @@ export const Home: React.FC<HomeProps> = ({
         </div>
 
         <p className="text-xs font-bold text-stadium-300">
-          Real-time cloud sync across all phones & devices for Vasu, Vinodh Sir, RK Sir & Faculty.
+          Instant real-time match synchronization across phones for Vasu, Vinodh Sir, RK Sir & Faculty.
         </p>
 
         {/* Quick Ground Status */}
         <div className="bg-stadium-950 border border-stadium-800 rounded-2xl p-3 flex items-center justify-between text-xs">
           <div className="flex items-center space-x-2">
             <Users className="w-4 h-4 text-turf-400" />
-            <span className="text-stadium-300 font-bold">Selected Today:</span>
+            <span className="text-stadium-300 font-bold">Present Faculty:</span>
           </div>
           <span className="font-black text-white bg-turf-500/20 px-3 py-1 rounded-xl border border-turf-500/40 text-xs">
-            {selectedPlayerIds.length} Players Present
+            {selectedPlayerIds.length} of {players.filter((p) => p.isActive).length} Available
           </span>
         </div>
       </div>
 
-      {/* TWO PRIMARY BIG ACTIONS */}
-      <div className="grid grid-cols-1 gap-3">
+      {/* PRIMARY BIG ACTION BUTTON */}
+      <div>
         <button
+          id="home-primary-action-btn"
           onClick={onMakeTeamsClick}
           className="w-full py-5 px-6 rounded-3xl bg-gradient-to-r from-turf-500 via-turf-600 to-emerald-600 text-stadium-950 font-black text-xl tracking-wider shadow-2xl shadow-turf-500/25 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-between group"
         >
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3.5">
             <div className="w-12 h-12 rounded-2xl bg-stadium-950/20 flex items-center justify-center text-stadium-950">
-              <Play className="w-7 h-7 fill-current" />
+              {isTodayMatchReady ? (
+                <CheckCircle2 className="w-7 h-7" />
+              ) : (
+                <Play className="w-7 h-7 fill-current" />
+              )}
             </div>
             <div className="text-left">
               <div className="leading-none text-xl">
-                {match1?.teamA && match1?.teamB ? "VIEW TODAY'S TEAMS" : "MAKE TEAMS"}
+                {isTodayMatchReady ? "VIEW TODAY'S TEAMS" : "MAKE TODAY'S TEAMS"}
               </div>
               <div className="text-[11px] font-bold text-stadium-950/80 mt-1 uppercase tracking-wide">
-                {match1?.teamA && match1?.teamB
-                  ? `Match 1 Ready • ${selectedPlayerIds.length} Players`
-                  : `Auto Balance ${selectedPlayerIds.length} Players`}
+                {isTodayMatchReady
+                  ? `Teams Ready • ${currentMatch?.availablePlayerIds?.length || selectedPlayerIds.length} Players`
+                  : `Select & Balance ${selectedPlayerIds.length} Players`}
               </div>
             </div>
           </div>
           <ArrowRight className="w-6 h-6 transform group-hover:translate-x-1 transition-transform" />
         </button>
-
-        <button
-          onClick={() => onNavigate('today')}
-          className="w-full py-4 px-6 rounded-3xl bg-stadium-900 border border-stadium-700 hover:border-turf-500/50 text-white font-black text-base shadow-xl flex items-center justify-between transition-all"
-        >
-          <div className="flex items-center space-x-3">
-            <Calendar className="w-5 h-5 text-turf-400" />
-            <span>Today's Match Sessions</span>
-          </div>
-          <span className="text-xs font-mono font-bold text-turf-400">
-            {selectedPlayerIds.length}/{players.filter((p) => p.isActive).length}
-          </span>
-        </button>
       </div>
 
-      {/* TODAY'S MATCH 1 & MATCH 2 STATUS CARDS */}
+      {/* TODAY'S MATCH CARD (SINGLE UNIFIED VIEW - NO M1/M2 CONFUSION) */}
       <div className="space-y-3">
         <div className="text-xs font-black text-stadium-300 uppercase tracking-wider px-1 flex items-center justify-between">
-          <span>Today's Matches</span>
-          <span className="text-[10px] text-turf-400 font-mono">Live Synced</span>
+          <div className="flex items-center space-x-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-turf-400" />
+            <span>Today's Match</span>
+          </div>
+          <span className="text-[10px] text-turf-400 font-mono font-bold">
+            {isTodayMatchReady ? 'Live Synced' : 'Ready to Generate'}
+          </span>
         </div>
 
-        {/* Match 1 Card */}
-        {match1 && match1.teamA && match1.teamB ? (
+        {isTodayMatchReady && currentMatch?.teamA && currentMatch?.teamB ? (
           <div
+            id="today-match-summary-card"
             onClick={() => onNavigate('today')}
-            className="bg-stadium-900 border border-turf-500/40 hover:border-turf-400 rounded-3xl p-5 cursor-pointer transition-all space-y-3 shadow-xl"
+            className="bg-stadium-900 border border-turf-500/40 hover:border-turf-400 rounded-3xl p-5 cursor-pointer transition-all space-y-4 shadow-2xl group"
           >
             <div className="flex items-center justify-between text-xs">
               <span className="text-turf-400 font-black uppercase tracking-wider flex items-center space-x-1.5">
-                <span>🏏 MATCH 1 TEAMS READY</span>
+                <span>🏏 TODAY'S TEAMS READY</span>
               </span>
               <span className="text-[10px] px-2.5 py-1 rounded-full bg-turf-500/20 text-turf-400 font-bold border border-turf-500/40">
-                {match1.isLocked ? 'LOCKED' : 'TEAMS READY'}
+                {currentMatch.isLocked ? 'LOCKED' : 'TEAMS READY'}
               </span>
             </div>
 
+            {/* Teams VS Display */}
             <div className="flex items-center justify-around py-3 border-y border-stadium-800 text-base font-black">
-              <div className="text-center">
-                <div className="text-turf-400">{match1.teamA.name}</div>
-                <div className="text-[10px] text-stadium-400 font-semibold mt-0.5">
-                  Capt: {match1.teamA.captainName} ({match1.teamA.players.length} p)
+              <div className="text-center flex-1">
+                <div className="text-turf-400 truncate text-base">{currentMatch.teamA.name}</div>
+                <div className="text-[11px] text-stadium-300 font-semibold mt-0.5">
+                  Capt: <span className="text-white font-bold">{currentMatch.teamA.captainName}</span>
+                </div>
+                <div className="text-[10px] text-stadium-500 font-mono mt-0.5">
+                  {currentMatch.teamA.players.length} Players
                 </div>
               </div>
-              <span className="text-xs text-stadium-500 font-mono font-extrabold px-2">VS</span>
-              <div className="text-center">
-                <div className="text-gold-400">{match1.teamB.name}</div>
-                <div className="text-[10px] text-stadium-400 font-semibold mt-0.5">
-                  Capt: {match1.teamB.captainName} ({match1.teamB.players.length} p)
+
+              <div className="px-3 text-center">
+                <span className="text-xs text-stadium-500 font-mono font-extrabold bg-stadium-950 px-2 py-1 rounded-lg border border-stadium-800">
+                  VS
+                </span>
+              </div>
+
+              <div className="text-center flex-1">
+                <div className="text-gold-400 truncate text-base">{currentMatch.teamB.name}</div>
+                <div className="text-[11px] text-stadium-300 font-semibold mt-0.5">
+                  Capt: <span className="text-white font-bold">{currentMatch.teamB.captainName}</span>
+                </div>
+                <div className="text-[10px] text-stadium-500 font-mono mt-0.5">
+                  {currentMatch.teamB.players.length} Players
                 </div>
               </div>
             </div>
 
-            {match1.joker && (
-              <div className="text-[10px] text-center text-gold-300 font-bold bg-gold-500/10 py-1 px-2 rounded-lg border border-gold-500/20">
-                🃏 Joker Player: {match1.joker.name} (Plays on both sides)
+            {/* Joker Player Badge (if present) */}
+            {currentMatch.joker && (
+              <div className="text-[11px] text-center text-gold-300 font-bold bg-gold-500/10 py-1.5 px-3 rounded-xl border border-gold-500/20">
+                🃏 Joker Player: <span className="text-white font-extrabold">{currentMatch.joker.name}</span> (Plays on both sides)
+              </div>
+            )}
+
+            {/* Toss Result Badge (if done) */}
+            {currentMatch.tossResult && (
+              <div className="text-[11px] text-center text-turf-300 font-bold bg-turf-500/10 py-1.5 px-3 rounded-xl border border-turf-500/20">
+                🪙 Toss Result: <span className="text-white font-extrabold">{currentMatch.tossResult}</span>
+              </div>
+            )}
+
+            {/* Live Scorecard Snapshot (if started) */}
+            {currentMatch.scorecard && (
+              <div className="bg-stadium-950 rounded-2xl p-2.5 border border-stadium-800 flex items-center justify-around text-xs">
+                <div className="text-center">
+                  <span className="text-[10px] text-stadium-400 uppercase font-bold block">
+                    {currentMatch.teamA.name}
+                  </span>
+                  <span className="text-sm font-black text-turf-400 font-mono">
+                    {currentMatch.scorecard.teamAScore.runs}/{currentMatch.scorecard.teamAScore.wickets}
+                  </span>
+                  <span className="text-[10px] text-stadium-500 font-mono ml-1">
+                    ({currentMatch.scorecard.teamAScore.overs} ov)
+                  </span>
+                </div>
+                <span className="text-stadium-700 font-bold">•</span>
+                <div className="text-center">
+                  <span className="text-[10px] text-stadium-400 uppercase font-bold block">
+                    {currentMatch.teamB.name}
+                  </span>
+                  <span className="text-sm font-black text-gold-400 font-mono">
+                    {currentMatch.scorecard.teamBScore.runs}/{currentMatch.scorecard.teamBScore.wickets}
+                  </span>
+                  <span className="text-[10px] text-stadium-500 font-mono ml-1">
+                    ({currentMatch.scorecard.teamBScore.overs} ov)
+                  </span>
+                </div>
               </div>
             )}
 
             <div className="flex items-center justify-between pt-1">
-              <span className="text-[10px] text-stadium-400 font-medium">Live Synced for all users & devices</span>
-              <span className="text-xs font-black text-turf-400 flex items-center space-x-1">
-                <span>View Today's Teams</span>
+              <span className="text-[10px] text-stadium-400 font-medium">
+                Live synced on every faculty phone
+              </span>
+              <span className="text-xs font-black text-turf-400 flex items-center space-x-1 group-hover:translate-x-1 transition-transform">
+                <span>View Full Match Details</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </span>
             </div>
           </div>
         ) : (
           <div
-            onClick={() => onNavigate('today')}
-            className="bg-stadium-900/60 border border-stadium-800 rounded-2xl p-3 text-center cursor-pointer hover:border-stadium-700 transition-all text-xs text-stadium-400"
+            id="today-match-empty-card"
+            onClick={onMakeTeamsClick}
+            className="bg-stadium-900/80 border border-stadium-800 hover:border-turf-500/40 rounded-3xl p-5 text-center cursor-pointer transition-all space-y-2.5 shadow-lg group"
           >
-            Match 1 not yet generated. Tap to create teams.
-          </div>
-        )}
-
-        {/* Match 2 Card */}
-        {match2 && match2.teamA && match2.teamB && (
-          <div
-            onClick={() => onNavigate('today')}
-            className="bg-stadium-900 border border-gold-500/40 hover:border-gold-400 rounded-3xl p-4 cursor-pointer transition-all space-y-2 shadow-lg"
-          >
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-gold-400 font-black uppercase tracking-wider">
-                🏏 MATCH 2
-              </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gold-500/20 text-gold-400 font-bold border border-gold-500/30">
-                {match2.isLocked ? 'LOCKED' : 'TEAMS READY'}
-              </span>
+            <div className="w-10 h-10 mx-auto rounded-2xl bg-stadium-950 border border-stadium-800 flex items-center justify-center text-turf-400">
+              <Calendar className="w-5 h-5 text-turf-400" />
             </div>
-
-            <div className="flex items-center justify-around py-2 border-y border-stadium-800 text-sm font-black">
-              <span className="text-turf-400 truncate max-w-[40%] text-center">{match2.teamA.name}</span>
-              <span className="text-xs text-stadium-400 font-mono font-extrabold">VS</span>
-              <span className="text-gold-400 truncate max-w-[40%] text-center">{match2.teamB.name}</span>
+            <div className="text-sm font-bold text-white">
+              No match generated yet for {formatDateDisplay(todayStr)}
             </div>
-
-            <div className="text-[11px] text-center text-stadium-300 font-bold">
-              Tap to view Match 2 details or live scorecard →
+            <p className="text-xs text-stadium-400 max-w-xs mx-auto">
+              Tap here to select present faculty and automatically balance teams with 1 click.
+            </p>
+            <div className="pt-1">
+              <span className="inline-flex items-center space-x-1 text-xs font-black text-turf-400 group-hover:underline">
+                <span>Start Team Selection</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </span>
             </div>
           </div>
         )}
@@ -333,7 +368,7 @@ export const Home: React.FC<HomeProps> = ({
         <TossCoin />
       </div>
 
-      {/* Yesterday's Top Performers Widget */}
+      {/* Previous Match Star Performers Widget */}
       {lastMatchStats && (
         <div className="bg-stadium-900 border border-stadium-800 rounded-3xl p-4 shadow-lg space-y-3">
           <div className="text-xs font-black text-stadium-300 uppercase tracking-wider text-center">
@@ -343,17 +378,29 @@ export const Home: React.FC<HomeProps> = ({
             {lastMatchStats.batsman && (
               <div className="bg-stadium-950 p-3 rounded-2xl border border-turf-500/20 text-center flex flex-col items-center justify-center">
                 <Star className="w-5 h-5 text-gold-400 mb-1" />
-                <div className="text-xs font-bold text-white truncate w-full">{lastMatchStats.batsman.name}</div>
-                <div className="text-xl font-black text-turf-400">{lastMatchStats.batsman.runs}</div>
-                <div className="text-[10px] text-stadium-400">runs ({lastMatchStats.batsman.balls} balls)</div>
+                <div className="text-xs font-bold text-white truncate w-full">
+                  {lastMatchStats.batsman.name}
+                </div>
+                <div className="text-xl font-black text-turf-400">
+                  {lastMatchStats.batsman.runs}
+                </div>
+                <div className="text-[10px] text-stadium-400">
+                  runs ({lastMatchStats.batsman.balls} balls)
+                </div>
               </div>
             )}
             {lastMatchStats.bowler && (
               <div className="bg-stadium-950 p-3 rounded-2xl border border-red-500/20 text-center flex flex-col items-center justify-center">
                 <Target className="w-5 h-5 text-red-400 mb-1" />
-                <div className="text-xs font-bold text-white truncate w-full">{lastMatchStats.bowler.name}</div>
-                <div className="text-xl font-black text-red-400">{lastMatchStats.bowler.wickets}</div>
-                <div className="text-[10px] text-stadium-400">wkts for {lastMatchStats.bowler.runs}</div>
+                <div className="text-xs font-bold text-white truncate w-full">
+                  {lastMatchStats.bowler.name}
+                </div>
+                <div className="text-xl font-black text-red-400">
+                  {lastMatchStats.bowler.wickets}
+                </div>
+                <div className="text-[10px] text-stadium-400">
+                  wkts for {lastMatchStats.bowler.runs}
+                </div>
               </div>
             )}
           </div>

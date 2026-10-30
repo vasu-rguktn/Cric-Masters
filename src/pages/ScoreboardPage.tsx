@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import type { MatchSession } from '../types/match';
 import { UmpireControls } from '../components/UmpireControls';
-import { getTodayMatchesByDate, saveCurrentMatch } from '../services/storageService';
-import { fetchTodayMatchesFromSupabase, subscribeToMatchUpdates, isSupabaseAvailable } from '../services/supabaseService';
+import { saveCurrentMatch } from '../services/storageService';
+import { fetchLatestTodayMatchFromSupabase, subscribeToMatchUpdates, isSupabaseAvailable } from '../services/supabaseService';
 import { getTodayIsoDate, formatDateDisplay } from '../utils/dates';
 import { RefreshCw } from 'lucide-react';
 
@@ -12,59 +12,34 @@ interface ScoreboardPageProps {
 }
 
 export const ScoreboardPage: React.FC<ScoreboardPageProps> = ({ currentMatch, setCurrentMatch }) => {
-  const [activeMatchNumber, setActiveMatchNumber] = useState<1 | 2>(
-    currentMatch?.matchNumber === 2 ? 2 : 1
-  );
   const [isUmpireMode, setIsUmpireMode] = useState(false);
-  const [match1, setMatch1] = useState<MatchSession | null>(null);
-  const [match2, setMatch2] = useState<MatchSession | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
-  const todayStr = currentMatch?.date || getTodayIsoDate();
+  const todayStr = getTodayIsoDate();
 
   const loadScoreboardData = async (silent: boolean = false) => {
     if (!silent) setIsSyncing(true);
 
-    const local = getTodayMatchesByDate(todayStr);
-    let m1 = local.match1;
-    let m2 = local.match2;
-
     try {
-      const cloudMatches = await fetchTodayMatchesFromSupabase(todayStr);
-      if (cloudMatches && cloudMatches.length > 0) {
-        const cloudM1 = cloudMatches.find((m) => m.matchNumber === 1);
-        const cloudM2 = cloudMatches.find((m) => m.matchNumber === 2);
-        if (cloudM1) m1 = cloudM1;
-        if (cloudM2) m2 = cloudM2;
+      if (isSupabaseAvailable()) {
+        const cloudMatch = await fetchLatestTodayMatchFromSupabase(todayStr);
+        if (cloudMatch) {
+          setCurrentMatch(cloudMatch);
+          saveCurrentMatch(cloudMatch);
+        }
       }
     } catch (e) {
       // use local
+    } finally {
+      if (!silent) setIsSyncing(false);
     }
-
-    setMatch1(m1);
-    setMatch2(m2);
-
-    const active = activeMatchNumber === 1 ? m1 : m2;
-    if (active) {
-      setCurrentMatch(active);
-    }
-    if (!silent) setIsSyncing(false);
   };
 
   useEffect(() => {
-    loadScoreboardData();
+    loadScoreboardData(true);
 
     const unsubscribe = subscribeToMatchUpdates(todayStr, (updatedMatch) => {
-      if (updatedMatch.matchNumber === 2) {
-        setMatch2(updatedMatch);
-      } else {
-        setMatch1(updatedMatch);
-      }
-
-      if (
-        (activeMatchNumber === 1 && (updatedMatch.matchNumber === 1 || !updatedMatch.matchNumber)) ||
-        (activeMatchNumber === 2 && updatedMatch.matchNumber === 2)
-      ) {
+      if (updatedMatch && updatedMatch.date === todayStr) {
         setCurrentMatch(updatedMatch);
         saveCurrentMatch(updatedMatch);
       }
@@ -74,59 +49,28 @@ export const ScoreboardPage: React.FC<ScoreboardPageProps> = ({ currentMatch, se
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       if (!isSupabaseAvailable()) return;
       loadScoreboardData(true);
-    }, 10000);
+    }, 8000);
 
     return () => {
       unsubscribe();
       clearInterval(interval);
     };
-  }, [todayStr, activeMatchNumber]);
+  }, [todayStr]);
 
-  useEffect(() => {
-    const target = activeMatchNumber === 1 ? match1 : match2;
-    if (target) {
-      setCurrentMatch(target);
-    }
-  }, [activeMatchNumber, match1, match2]);
-
-  const activeMatch = activeMatchNumber === 1 ? match1 || currentMatch : match2 || currentMatch;
+  const activeMatch = currentMatch && currentMatch.date === todayStr ? currentMatch : null;
 
   if (!activeMatch || !activeMatch.teamA || !activeMatch.teamB) {
     return (
       <div className="p-4 pb-24 max-w-md mx-auto space-y-4 animate-fade-in">
-        {/* Match 1 / 2 Selector */}
-        <div className="bg-stadium-900/90 border border-stadium-800 p-1.5 rounded-2xl flex items-center space-x-1.5 shadow-lg">
-          <button
-            onClick={() => setActiveMatchNumber(1)}
-            className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center space-x-1.5 ${
-              activeMatchNumber === 1
-                ? 'bg-gradient-to-r from-turf-500 to-turf-600 text-stadium-950 shadow-md'
-                : 'text-stadium-300 hover:bg-stadium-800'
-            }`}
-          >
-            MATCH 1
-          </button>
-          <button
-            onClick={() => setActiveMatchNumber(2)}
-            className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center space-x-1.5 ${
-              activeMatchNumber === 2
-                ? 'bg-gradient-to-r from-turf-500 to-turf-600 text-stadium-950 shadow-md'
-                : 'text-stadium-300 hover:bg-stadium-800'
-            }`}
-          >
-            MATCH 2
-          </button>
-        </div>
-
         <div className="p-8 flex flex-col items-center justify-center min-h-[50vh] text-center bg-stadium-900 border border-stadium-800 rounded-3xl space-y-3">
           <div className="w-12 h-12 rounded-2xl bg-stadium-800 flex items-center justify-center text-turf-400 font-bold text-xl">
             🏏
           </div>
           <p className="text-white font-extrabold text-base">
-            No active teams generated for Match {activeMatchNumber}.
+            No active teams generated for today ({formatDateDisplay(todayStr)}).
           </p>
           <p className="text-xs text-stadium-400 max-w-xs">
-            Generate or reuse teams in the <strong>Today</strong> tab. Once created, live scores will automatically sync
+            Generate teams in the <strong>Today</strong> tab. Once created, live scores will automatically sync
             here across all phones.
           </p>
         </div>
@@ -162,63 +106,17 @@ export const ScoreboardPage: React.FC<ScoreboardPageProps> = ({ currentMatch, se
         </div>
         <button
           onClick={() => loadScoreboardData(false)}
-          className="p-1 text-stadium-400 hover:text-white transition-colors"
+          className="p-1 text-stadium-400 hover:text-white transition-colors flex items-center space-x-1"
           title="Refresh"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-        </button>
-      </div>
-
-      {/* MATCH 1 / MATCH 2 SWITCHER */}
-      <div className="bg-stadium-900/90 border border-stadium-800 p-1.5 rounded-2xl flex items-center space-x-1.5 shadow-lg">
-        <button
-          onClick={() => setActiveMatchNumber(1)}
-          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center space-x-1.5 ${
-            activeMatchNumber === 1
-              ? 'bg-gradient-to-r from-turf-500 to-turf-600 text-stadium-950 shadow-md shadow-turf-500/20'
-              : 'text-stadium-300 hover:bg-stadium-800'
-          }`}
-        >
-          <span>MATCH 1</span>
-          {match1?.teamA && (
-            <span
-              className={`text-[9px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                activeMatchNumber === 1
-                  ? 'bg-stadium-950/30 text-stadium-950'
-                  : 'bg-turf-500/20 text-turf-400'
-              }`}
-            >
-              LIVE
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setActiveMatchNumber(2)}
-          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center space-x-1.5 ${
-            activeMatchNumber === 2
-              ? 'bg-gradient-to-r from-turf-500 to-turf-600 text-stadium-950 shadow-md shadow-turf-500/20'
-              : 'text-stadium-300 hover:bg-stadium-800'
-          }`}
-        >
-          <span>MATCH 2</span>
-          {match2?.teamA && (
-            <span
-              className={`text-[9px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                activeMatchNumber === 2
-                  ? 'bg-stadium-950/30 text-stadium-950'
-                  : 'bg-gold-500/20 text-gold-400'
-              }`}
-            >
-              LIVE
-            </span>
-          )}
+          <RefreshCw className={`w-3.5 h-3.5 text-turf-400 ${isSyncing ? 'animate-spin' : ''}`} />
+          <span className="text-[10px] font-bold">SYNC</span>
         </button>
       </div>
 
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-black text-white">Scoreboard — M{activeMatchNumber}</h2>
+          <h2 className="text-2xl font-black text-white">Today's Scoreboard</h2>
           <p className="text-[11px] font-bold text-stadium-400">{formatDateDisplay(activeMatch.date)}</p>
         </div>
 
@@ -338,7 +236,7 @@ export const ScoreboardPage: React.FC<ScoreboardPageProps> = ({ currentMatch, se
 
       {scorecard.isCompleted ? (
         <div className="bg-stadium-900/90 rounded-3xl p-6 border-2 border-turf-500 shadow-2xl text-center space-y-4">
-          <h2 className="text-2xl font-black text-white">MATCH {activeMatchNumber} COMPLETED</h2>
+          <h2 className="text-2xl font-black text-white">TODAY'S MATCH COMPLETED</h2>
           <div className="text-lg font-bold text-stadium-300">
             {activeMatch.winnerTeamId === 'TIE'
               ? "It's a Tie!"
