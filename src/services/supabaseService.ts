@@ -555,6 +555,66 @@ export async function syncMatchToSupabase(match: MatchSession): Promise<boolean>
   }
 }
 
+export async function deleteMatchFromSupabase(matchId: string, date?: string): Promise<boolean> {
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({ type: 'MATCH_RESET', matchId, date });
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!isCloudAvailable()) return false;
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from('daily_matches').delete().eq('id', matchId);
+    if (error) {
+      recordCloudFailure(error);
+      return false;
+    }
+    recordCloudSuccess();
+    return true;
+  } catch (e) {
+    recordCloudFailure(e);
+    return false;
+  }
+}
+
+export async function deleteTodayMatchFromSupabase(date: string, matchId?: string): Promise<boolean> {
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({ type: 'MATCH_RESET', date, matchId });
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!isCloudAvailable()) return false;
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    let query = client.from('daily_matches').delete();
+    if (matchId) {
+      query = query.eq('id', matchId);
+    } else {
+      query = query.eq('date', date);
+    }
+    const { error } = await query;
+    if (error) {
+      recordCloudFailure(error);
+      return false;
+    }
+    recordCloudSuccess();
+    return true;
+  } catch (e) {
+    recordCloudFailure(e);
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // TOSS HISTORY CLOUD SYNC
 // ---------------------------------------------------------------------------
@@ -623,6 +683,10 @@ export function subscribeToMatchUpdates(
 ): () => void {
   // 1. Listen to local broadcast channel
   const handleBroadcast = (event: MessageEvent) => {
+    if (event.data?.type === 'MATCH_RESET') {
+      onMatchReceived(null as any);
+      return;
+    }
     if (event.data && event.data.type === 'MATCH_UPDATED' && event.data.match) {
       const match = event.data.match as MatchSession;
       if (match.date === date) {
@@ -637,7 +701,11 @@ export function subscribeToMatchUpdates(
 
   // 2. Listen to storage events (cross-window/tab sync on same origin)
   const handleStorage = (event: StorageEvent) => {
-    if (event.key === 'cricmasters_current_match' && event.newValue) {
+    if (event.key === 'cricmasters_current_match') {
+      if (!event.newValue) {
+        onMatchReceived(null as any);
+        return;
+      }
       try {
         const match = JSON.parse(event.newValue) as MatchSession;
         if (match && match.date === date) {
@@ -668,6 +736,10 @@ export function subscribeToMatchUpdates(
             table: 'daily_matches',
           },
           (payload: any) => {
+            if (payload.eventType === 'DELETE' || (!payload.new && payload.old)) {
+              onMatchReceived(null as any);
+              return;
+            }
             if (payload.new) {
               const updatedMatch = mapRowToMatchSession(payload.new);
               if (updatedMatch.date === date) {

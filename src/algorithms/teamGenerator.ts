@@ -22,6 +22,7 @@ import {
   isKrishna,
   isVinod,
   isAshok,
+  isSupportClusterPlayer,
 } from './playerHelpers';
 
 /**
@@ -564,6 +565,28 @@ function isSplitValid(
   const paceA = candidateA.filter(isPaceBowler).length;
   const paceB = candidateB.filter(isPaceBowler).length;
   if (Math.abs(paceA - paceB) > 1) {
+    return false;
+  }
+
+  // Support Cluster (LK Sir, Ranjit Sir, Shiva Sir, Rajarao Sir, Ashok Sir) must NOT all be in the same team
+  // Split them 50/50 and ensure neither team is dominated by 4 or more of them
+  const supportA = candidateA.filter(isSupportClusterPlayer).length;
+  const supportB = candidateB.filter(isSupportClusterPlayer).length;
+  if (supportA >= 4 || supportB >= 4) {
+    return false;
+  }
+  if (Math.abs(supportA - supportB) > 1) {
+    return false;
+  }
+
+  // Guarantee that neither team is left without a proper Top Batter or Strike Bowler
+  const totalTop = topBatA + topBatB;
+  if (totalTop >= 2 && (topBatA === 0 || topBatB === 0)) {
+    return false;
+  }
+
+  const totalStrike = strikeA + strikeB;
+  if (totalStrike >= 2 && (strikeA === 0 || strikeB === 0)) {
     return false;
   }
 

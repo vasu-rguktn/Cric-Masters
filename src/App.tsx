@@ -108,14 +108,21 @@ export function App() {
     });
 
     const unsubMatches = subscribeToMatchUpdates(todayStr, (updatedMatch: MatchSession) => {
-      if (isMounted && updatedMatch && updatedMatch.date === getTodayIsoDate()) {
-        saveCurrentMatch(updatedMatch);
-        saveMatchToHistory(updatedMatch);
-        setCurrentMatch(updatedMatch);
-        if (updatedMatch.availablePlayerIds && updatedMatch.availablePlayerIds.length > 0) {
-          setSelectedPlayerIds(updatedMatch.availablePlayerIds);
+      if (isMounted) {
+        if (!updatedMatch) {
+          clearCurrentMatch();
+          setCurrentMatch(null);
+          return;
         }
-        setLastSyncedTime(new Date());
+        if (updatedMatch.date === getTodayIsoDate()) {
+          saveCurrentMatch(updatedMatch);
+          saveMatchToHistory(updatedMatch);
+          setCurrentMatch(updatedMatch);
+          if (updatedMatch.availablePlayerIds && updatedMatch.availablePlayerIds.length > 0) {
+            setSelectedPlayerIds(updatedMatch.availablePlayerIds);
+          }
+          setLastSyncedTime(new Date());
+        }
       }
     });
 

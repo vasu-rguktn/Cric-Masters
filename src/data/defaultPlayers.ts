@@ -119,10 +119,9 @@ export const INITIAL_PLAYERS: Player[] = [
   {
     id: 'p-rajarao',
     name: 'Rajarao Sir',
-    roles: ['Batsman', 'Power Batter'],
+    roles: ['Batsman'],
     isRegular: false,
     isActive: true,
-    isTopBatter: true,
     createdAt: new Date().toISOString(),
   },
   {

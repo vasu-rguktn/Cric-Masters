@@ -8,13 +8,15 @@ import { TossCoin } from '../components/TossCoin';
 import { MatchCardModal } from '../components/MatchCardModal';
 import { generateTeams } from '../algorithms/teamGenerator';
 import { replaceCaptainInTeam } from '../algorithms/captainSelector';
+import { calculateBalanceScore } from '../algorithms/teamScoring';
 import {
   getMatchHistory,
   saveMatchToHistory,
   saveCurrentMatch,
   clearCurrentMatch,
+  removeMatchFromHistory,
 } from '../services/storageService';
-import { syncMatchToSupabase } from '../services/supabaseService';
+import { syncMatchToSupabase, deleteTodayMatchFromSupabase } from '../services/supabaseService';
 import { formatDateDisplay, getTodayIsoDate } from '../utils/dates';
 import { shareOrCopyMatch, copyMatchDirectLink } from '../utils/sharing';
 import { calculatePlayerPerformance } from '../utils/performanceRating';
@@ -108,8 +110,15 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
     setSelectedPlayerIds(activePlayers.map((p) => p.id));
   };
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
     setSelectedPlayerIds([]);
+    if (currentMatch) {
+      const matchToClear = currentMatch;
+      clearCurrentMatch();
+      setCurrentMatch(null);
+      removeMatchFromHistory(matchToClear.id);
+      await deleteTodayMatchFromSupabase(matchToClear.date, matchToClear.id);
+    }
   };
 
   const handleSelectYesterday = (ids: string[]) => {
@@ -236,14 +245,18 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
   const handleStartNewMatch = async () => {
     if (
       confirm(
-        "Reset today's match? Teams and scores for today will be reset for a fresh generation. (Previous match is retained in history)."
+        "Reset today's match? Teams and scores for today will be completely cleared for a fresh generation."
       )
     ) {
-      if (currentMatch) {
-        saveMatchToHistory(currentMatch);
-      }
+      const matchToClear = currentMatch;
       clearCurrentMatch();
       setCurrentMatch(null);
+      if (matchToClear) {
+        removeMatchFromHistory(matchToClear.id);
+        await deleteTodayMatchFromSupabase(matchToClear.date, matchToClear.id);
+      }
+      const regularIds = activePlayers.filter((p) => p.isRegular).map((p) => p.id);
+      setSelectedPlayerIds(regularIds);
       setIsPlayerSelectorExpanded(true);
     }
   };
@@ -498,7 +511,7 @@ export const TodayMatch: React.FC<TodayMatchProps> = ({
           <RoleSummary
             teamA={currentMatch.teamA}
             teamB={currentMatch.teamB}
-            balanceScore={currentMatch.teamA.roleSummary.strengthScore}
+            balanceScore={calculateBalanceScore(currentMatch.teamA.roleSummary, currentMatch.teamB.roleSummary)}
             limitations={currentMatch.limitations}
           />
 

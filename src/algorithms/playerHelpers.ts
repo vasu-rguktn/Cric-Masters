@@ -57,3 +57,21 @@ export function isAshok(player: Player): boolean {
   return player.id === 'p-ashok' || name.includes('ashok');
 }
 
+export function isRanjit(player: Player): boolean {
+  const name = player.name.toLowerCase().trim();
+  return player.id === 'p-ranjit' || name.includes('ranjit') || name.includes('ranjith');
+}
+
+export function isRajarao(player: Player): boolean {
+  const name = player.name.toLowerCase().trim();
+  return player.id === 'p-rajarao' || name.includes('rajarao') || name.includes('raja rao');
+}
+
+/**
+ * LK Sir, Ranjit Sir, Shiva Sir, Rajarao Sir, Ashok Sir are average/support players.
+ * They must NEVER all be placed in the same team with no proper batsmen or strike bowlers.
+ */
+export function isSupportClusterPlayer(player: Player): boolean {
+  return isLK(player) || isRanjit(player) || isShiva(player) || isRajarao(player) || isAshok(player);
+}
+

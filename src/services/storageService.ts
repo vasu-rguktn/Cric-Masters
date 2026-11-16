@@ -78,12 +78,26 @@ export function getTodayMatch(date: string = getTodayIsoDate()): MatchSession | 
   if (current && current.date === date) {
     return current;
   }
+  // For today, if currentMatch was cleared/reset, do NOT resurrect it from history!
+  if (date === getTodayIsoDate()) {
+    return null;
+  }
   const history = getMatchHistory();
   const found = history
     .slice()
     .reverse()
     .find((m) => m.date === date && m.teamA && m.teamB);
   return found || null;
+}
+
+export function removeMatchFromHistory(matchId: string): void {
+  try {
+    const history = getMatchHistory();
+    const updated = history.filter((m) => m.id !== matchId);
+    localStorage.setItem(KEYS.MATCH_HISTORY, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
 }
 
 export function saveCurrentMatch(match: MatchSession): void {
