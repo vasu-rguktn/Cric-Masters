@@ -52,3 +52,8 @@ export function isVinod(player: Player): boolean {
   return player.id === 'p-vinod' || name.includes('vinod') || name.includes('vinodh');
 }
 
+export function isAshok(player: Player): boolean {
+  const name = player.name.toLowerCase().trim();
+  return player.id === 'p-ashok' || name.includes('ashok');
+}
+

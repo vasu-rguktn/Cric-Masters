@@ -5,6 +5,8 @@ export interface TeamRoleSummary {
   spinCount: number;
   allRounderCount: number;
   batsmanCount: number;
+  strikeBowlerCount?: number;
+  topBatterCount?: number;
   totalPlayers: number;
   strengthScore: number;
 }

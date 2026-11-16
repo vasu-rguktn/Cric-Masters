@@ -1,6 +1,22 @@
 import type { MatchSession } from '../types/match';
 import { formatDateDisplay } from './dates';
 import { calculatePlayerPerformance } from './performanceRating';
+import { getAppSettings } from '../services/storageService';
+
+export function getShortMatchUrl(match?: MatchSession): string {
+  if (typeof window !== 'undefined' && window.location.origin) {
+    const origin = window.location.origin;
+    const pathname = window.location.pathname.replace(/\/$/, '');
+    const base = `${origin}${pathname}/`;
+    if (match?.date) {
+      return `${base}?d=${match.date}`;
+    }
+    return base;
+  }
+  return match?.date
+    ? `https://vasu-rguktn.github.io/Cric-Masters/?d=${match.date}`
+    : 'https://vasu-rguktn.github.io/Cric-Masters/';
+}
 
 export function encodeMatchToUrl(match: MatchSession): string {
   try {
@@ -63,7 +79,6 @@ export function formatMatchShareText(match: MatchSession): string {
   }
 
   const dateFormatted = formatDateDisplay(match.date);
-  const directLink = encodeMatchToUrl(match);
 
   const teamAPlayers = match.teamA.players
     .map(
@@ -129,21 +144,30 @@ export function formatMatchShareText(match: MatchSession): string {
     text += `🏆 WINNER: ${winnerName}\n`;
   }
 
-  if (directLink) {
-    text += `\n🔗 OPEN TEAMS ON LAPTOP / OTHER DEVICE:\n${directLink}\n`;
+  const settings = getAppSettings();
+  const linkFormat = settings.shareLinkFormat || 'short';
+
+  if (linkFormat === 'short') {
+    const shortLink = getShortMatchUrl(match);
+    text += `\n📲 Match Link: ${shortLink}\n`;
+  } else if (linkFormat === 'full') {
+    const directLink = encodeMatchToUrl(match);
+    if (directLink) {
+      text += `\n🔗 OPEN TEAMS ON LAPTOP / OTHER DEVICE:\n${directLink}\n`;
+    }
   }
 
   text += `\nGenerated with Cric Masters App`;
   return text;
 }
 
-export async function copyMatchDirectLink(match: MatchSession): Promise<boolean> {
-  const link = encodeMatchToUrl(match);
+export async function copyMatchDirectLink(match: MatchSession, fullData: boolean = false): Promise<boolean> {
+  const link = fullData ? encodeMatchToUrl(match) : getShortMatchUrl(match);
   if (!link) return false;
   try {
     await navigator.clipboard.writeText(link);
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }

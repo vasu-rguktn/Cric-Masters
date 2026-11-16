@@ -21,6 +21,8 @@ const ALL_ROLES: PlayerRole[] = [
   'Spinner',
   'Leg Spinner',
   'Batsman',
+  'Power Batter',
+  'Strike Bowler',
   'Wicketkeeper',
 ];
 
@@ -31,6 +33,8 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
   const [nameInput, setNameInput] = useState<string>('');
   const [rolesInput, setRolesInput] = useState<PlayerRole[]>([]);
   const [isRegularInput, setIsRegularInput] = useState<boolean>(true);
+  const [isStrikeBowlerInput, setIsStrikeBowlerInput] = useState<boolean>(false);
+  const [isTopBatterInput, setIsTopBatterInput] = useState<boolean>(false);
   const [avatarUrlInput, setAvatarUrlInput] = useState<string>('');
   const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
 
@@ -40,6 +44,8 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
     setNameInput('');
     setRolesInput([]);
     setIsRegularInput(true);
+    setIsStrikeBowlerInput(false);
+    setIsTopBatterInput(false);
     setAvatarUrlInput('');
     setIsAdding(false);
     setEditingPlayerId(null);
@@ -54,6 +60,8 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
     setNameInput(player.name);
     setRolesInput([...player.roles]);
     setIsRegularInput(player.isRegular);
+    setIsStrikeBowlerInput(!!player.isStrikeBowler || player.roles.includes('Strike Bowler'));
+    setIsTopBatterInput(!!player.isTopBatter || player.roles.includes('Power Batter'));
     setAvatarUrlInput(player.avatarUrl || '');
     setEditingPlayerId(player.id);
     setIsAdding(false);
@@ -127,6 +135,8 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
               name: nameInput.trim(),
               roles: rolesInput,
               isRegular: isRegularInput,
+              isStrikeBowler: isStrikeBowlerInput,
+              isTopBatter: isTopBatterInput,
               avatarUrl: avatarUrlInput.trim() || undefined,
             }
           : p
@@ -137,6 +147,8 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
         name: nameInput.trim(),
         roles: rolesInput,
         isRegular: isRegularInput,
+        isStrikeBowler: isStrikeBowlerInput,
+        isTopBatter: isTopBatterInput,
         isActive: true,
         avatarUrl: avatarUrlInput.trim() || undefined,
         createdAt: new Date().toISOString(),
@@ -284,6 +296,41 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
               </div>
             </div>
 
+            <div className="bg-stadium-950/70 p-3 rounded-2xl border border-stadium-800 space-y-2">
+              <span className="text-xs font-bold text-stadium-300 block">
+                Match Balance Qualifications (50/50 Equal Split)
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStrikeBowlerInput(!isStrikeBowlerInput)}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-black border transition-all flex items-center justify-center space-x-1.5 ${
+                    isStrikeBowlerInput
+                      ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-sm'
+                      : 'bg-stadium-900 text-stadium-500 border-stadium-800'
+                  }`}
+                >
+                  <span>⚡</span>
+                  <span>Strike Bowler</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsTopBatterInput(!isTopBatterInput)}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-black border transition-all flex items-center justify-center space-x-1.5 ${
+                    isTopBatterInput
+                      ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-sm'
+                      : 'bg-stadium-900 text-stadium-500 border-stadium-800'
+                  }`}
+                >
+                  <span>🏏</span>
+                  <span>Top Batter</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-stadium-400">
+                Strike Bowlers and Top Batters are strictly divided 50/50 between both teams.
+              </p>
+            </div>
+
             <div className="flex items-center justify-between pt-2">
               <label className="text-xs font-bold text-stadium-300">
                 Regular Player Priority
@@ -352,6 +399,16 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
                     <Star className="w-3 h-3 text-gold-400 fill-gold-400" />
                   </div>
                   <div className="flex flex-wrap gap-1 mt-1">
+                    {player.isStrikeBowler && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
+                        ⚡ Strike
+                      </span>
+                    )}
+                    {player.isTopBatter && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                        🏏 Top
+                      </span>
+                    )}
                     {player.roles.map((r, i) => (
                       <span
                         key={i}
@@ -422,6 +479,16 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers })
                 <div>
                   <div className="font-extrabold text-sm text-white">{player.name}</div>
                   <div className="flex flex-wrap gap-1 mt-1">
+                    {player.isStrikeBowler && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
+                        ⚡ Strike
+                      </span>
+                    )}
+                    {player.isTopBatter && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                        🏏 Top
+                      </span>
+                    )}
                     {player.roles.map((r, i) => (
                       <span
                         key={i}

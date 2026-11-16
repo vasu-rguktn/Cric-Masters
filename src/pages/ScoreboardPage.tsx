@@ -28,7 +28,7 @@ export const ScoreboardPage: React.FC<ScoreboardPageProps> = ({ currentMatch, se
           saveCurrentMatch(cloudMatch);
         }
       }
-    } catch (e) {
+    } catch {
       // use local
     } finally {
       if (!silent) setIsSyncing(false);

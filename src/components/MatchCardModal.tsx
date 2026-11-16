@@ -15,9 +15,9 @@ export const MatchCardModal: React.FC<MatchCardModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  if (!isOpen || !match.teamA || !match.teamB) return null;
-
   const [shareStatus, setShareStatus] = React.useState<string | null>(null);
+
+  if (!isOpen || !match.teamA || !match.teamB) return null;
 
   const handleShare = async () => {
     const res = await shareOrCopyMatch(match);

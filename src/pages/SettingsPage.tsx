@@ -612,6 +612,26 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ theme = 'dark', onTo
               <option value={10}>Past 10 matches</option>
             </select>
           </div>
+
+          <div>
+            <label className="text-xs font-bold text-stadium-300 block mb-1">
+              WhatsApp & App Sharing Link
+            </label>
+            <select
+              value={settings.shareLinkFormat || 'short'}
+              onChange={(e) =>
+                setSettings({ ...settings, shareLinkFormat: e.target.value as 'short' | 'none' | 'full' })
+              }
+              className="w-full bg-stadium-950 border border-stadium-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-turf-400"
+            >
+              <option value="short">Clean Short Link (Recommended - 1 line URL)</option>
+              <option value="none">No Link (Pure team list - 0 URL characters)</option>
+              <option value="full">Full Encoded Link (Legacy 2KB base64 URL)</option>
+            </select>
+            <p className="text-[10px] text-stadium-400 mt-1">
+              Prevents huge base64 clutter when sharing teams on WhatsApp, Telegram, or SMS.
+            </p>
+          </div>
         </div>
 
         <button

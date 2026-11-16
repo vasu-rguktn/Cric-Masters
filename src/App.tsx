@@ -5,6 +5,7 @@ import {
   getStoredPlayers,
   saveStoredPlayers,
   getCurrentMatch,
+  getTodayMatch,
   saveCurrentMatch,
   saveMatchToHistory,
   clearCurrentMatch,
@@ -190,12 +191,14 @@ export function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // URL sharing check
+  // URL sharing check (supports both legacy base64 ?m= and clean short ?d=)
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.search) {
       const searchParams = new URLSearchParams(window.location.search);
       const sharedParam = searchParams.get('m') || searchParams.get('match');
-      if (sharedParam) {
+      const dateParam = searchParams.get('d') || searchParams.get('date');
+
+      if (sharedParam && sharedParam.length > 20) {
         const decodedMatch = decodeMatchFromUrl(sharedParam);
         if (decodedMatch) {
           setCurrentMatch(decodedMatch);
@@ -205,7 +208,19 @@ export function App() {
             setSelectedPlayerIds(decodedMatch.availablePlayerIds);
           }
           window.history.replaceState({}, document.title, window.location.pathname);
+          return;
         }
+      }
+
+      if (dateParam) {
+        const found = getTodayMatch(dateParam);
+        if (found) {
+          setCurrentMatch(found);
+          if (found.availablePlayerIds && found.availablePlayerIds.length > 0) {
+            setSelectedPlayerIds(found.availablePlayerIds);
+          }
+        }
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
   }, []);

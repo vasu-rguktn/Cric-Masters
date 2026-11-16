@@ -5,6 +5,8 @@ export type PlayerRole =
   | 'Spinner'
   | 'Leg Spinner'
   | 'Batsman'
+  | 'Power Batter'
+  | 'Strike Bowler'
   | 'Wicketkeeper';
 
 export interface Player {
@@ -13,6 +15,8 @@ export interface Player {
   roles: PlayerRole[];
   isRegular: boolean;
   isActive: boolean;
+  isStrikeBowler?: boolean;
+  isTopBatter?: boolean;
   avatarUrl?: string;
   rating?: number; // Optional numerical rating for advanced tuning
   createdAt: string;

@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   repetitionPenaltyWeight: 5,
   historyWindowSize: 5,
   enableSupabase: true,
+  shareLinkFormat: 'short',
   supabaseUrl: 'https://ztcnsuddrezydwuzafpb.supabase.co',
   supabaseAnonKey:
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Y25zdWRkcmV6eWR3dXphZnBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE1NDk3OTYsImV4cCI6MjEwNzEyNTc5Nn0.YbT06fZCLcshhUlHgHXK99RccA32kMFAek00RQNZnL8',
@@ -64,7 +65,7 @@ export function getCurrentMatch(autoExpire: boolean = true): MatchSession | null
     }
 
     return match;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -97,7 +98,7 @@ export function getMatchHistory(): MatchSession[] {
   try {
     const raw = localStorage.getItem(KEYS.MATCH_HISTORY);
     return raw ? JSON.parse(raw) : [];
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -153,7 +154,7 @@ export function getYesterdayPlayerIds(): string[] {
   try {
     const raw = localStorage.getItem(KEYS.YESTERDAY_PLAYERS);
     return raw ? JSON.parse(raw) : [];
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -162,7 +163,7 @@ export function getTossHistory(): TossRecord[] {
   try {
     const raw = localStorage.getItem(KEYS.TOSS_HISTORY);
     return raw ? JSON.parse(raw) : [];
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -178,7 +179,7 @@ export function getAppSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(KEYS.SETTINGS);
     return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
-  } catch (e) {
+  } catch {
     return DEFAULT_SETTINGS;
   }
 }

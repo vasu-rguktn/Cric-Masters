@@ -4,6 +4,10 @@ import type { MatchSession } from '../types/match';
 import {
   calculateTeamRoleSummary,
   calculateBalanceScore,
+  isStrikeBowler,
+  isTopBatter,
+  isSpinBowler,
+  isPaceBowler,
 } from './teamScoring';
 import { calculateRepetitionPenalty } from './repetitionPenalty';
 import { selectCaptains } from './captainSelector';
@@ -17,11 +21,12 @@ import {
   isSuresh,
   isKrishna,
   isVinod,
+  isAshok,
 } from './playerHelpers';
 
 /**
  * Determines whether Srinivas and Shiva should be on opposite teams (true) or same team (false)
- * to maintain the ratio of being opposite in 4 out of 6 matches (4/6 opposite, 2/6 same).
+ * to maintain the ratio of being on the same team 1 out of 3 matches (1/3 same, 2/3 opposite).
  */
 export function determineSrinivasShivaOppositeTarget(
   history: MatchSession[],
@@ -50,7 +55,7 @@ export function determineSrinivasShivaOppositeTarget(
   const oppCount = recentOppositeHistory.filter(Boolean).length;
   const sameCount = recentOppositeHistory.length - oppCount;
 
-  // In a 6-match window, Srinivas is opposite Shiva 4 times and together 2 times
+  // In a 6-match window, Srinivas is opposite Shiva 4 times and together 2 times (1 out of 3 same)
   if (oppCount >= 4) {
     return false; // Reached cap of 4 opposite -> force same team
   }
@@ -62,6 +67,51 @@ export function determineSrinivasShivaOppositeTarget(
   const remainingSlots = 6 - recentOppositeHistory.length;
   const probOpp = Math.max(0, Math.min(1, remainingOpp / remainingSlots));
   return Math.random() < probOpp;
+}
+
+/**
+ * Determines whether Ashok Sir and Vasu should be on the same team (true) or opposite teams (false)
+ * to maintain the ratio of 2 out of 5 matches on the same team (2/5 same, 3/5 opposite).
+ */
+export function determineAshokVasuSameTarget(
+  history: MatchSession[],
+  hasAshok: boolean,
+  hasVasu: boolean
+): boolean | null {
+  if (!hasAshok || !hasVasu) return null;
+
+  // Gather recent matches where both Ashok & Vasu were on teamA or teamB (not joker)
+  const recentSameHistory: boolean[] = [];
+  for (let i = history.length - 1; i >= 0 && recentSameHistory.length < 4; i--) {
+    const m = history[i];
+    if (!m.teamA || !m.teamB) continue;
+
+    const ashokA = m.teamA.players.some(isAshok);
+    const ashokB = m.teamB.players.some(isAshok);
+    const vasuA = m.teamA.players.some(isVasu);
+    const vasuB = m.teamB.players.some(isVasu);
+
+    if ((ashokA || ashokB) && (vasuA || vasuB)) {
+      const isSame = (ashokA && vasuA) || (ashokB && vasuB);
+      recentSameHistory.push(isSame);
+    }
+  }
+
+  const sameCount = recentSameHistory.filter(Boolean).length;
+  const oppCount = recentSameHistory.length - sameCount;
+
+  // In a 5-match window: cap of 2 same team, 3 opposite
+  if (sameCount >= 2) {
+    return false; // Reached cap of 2 same team -> force opposite teams
+  }
+  if (oppCount >= 3) {
+    return true; // Reached cap of 3 opposite -> force same team
+  }
+
+  const remainingSame = 2 - sameCount;
+  const remainingSlots = 5 - recentSameHistory.length;
+  const probSame = Math.max(0, Math.min(1, remainingSame / remainingSlots));
+  return Math.random() < probSame;
 }
 
 export interface LKSrinivasTargets {
@@ -347,13 +397,18 @@ export function generateTeams(
     }
   }
 
-  // Srinivas vs Shiva 4/6 rule target
+  // Srinivas vs Shiva: same team 1 out of 3 matches (2 out of 3 opposite)
   const srinivasShivaOpposite = determineSrinivasShivaOppositeTarget(history, hasSrinivas, hasShiva);
+
+  // Ashok vs Vasu: same team 2 out of 5 matches (3 out of 5 opposite)
+  const hasAshok = pool.some(isAshok);
+  const ashokVasuSame = determineAshokVasuSameTarget(history, hasAshok, hasVasu);
 
   const targets = {
     rkTargetSame,
     anurupamTargetSame,
     srinivasShivaOpposite,
+    ashokVasuSame,
     lkTargetSameAsVasu: lkSrTargets.lkTargetSameAsVasu,
     srinivasTargetSameAsVasu: lkSrTargets.srinivasTargetSameAsVasu,
     lkSrinivasTargetSameTeam: lkSrTargets.lkSrinivasTargetSameTeam,
@@ -479,12 +534,39 @@ function isSplitValid(
     rkTargetSame: boolean | null;
     anurupamTargetSame: boolean | null;
     srinivasShivaOpposite: boolean | null;
+    ashokVasuSame: boolean | null;
     lkTargetSameAsVasu: boolean | null;
     srinivasTargetSameAsVasu: boolean | null;
     lkSrinivasTargetSameTeam: boolean | null;
   },
   enforceProbabilistic: boolean = true
 ): boolean {
+  // 0. Strict 50/50 capacity distribution to prevent bias:
+  // Strike Bowlers, Top Batters, Spinners, and Pace Bowlers must be evenly split
+  const strikeA = candidateA.filter(isStrikeBowler).length;
+  const strikeB = candidateB.filter(isStrikeBowler).length;
+  if (Math.abs(strikeA - strikeB) > 1) {
+    return false;
+  }
+
+  const topBatA = candidateA.filter(isTopBatter).length;
+  const topBatB = candidateB.filter(isTopBatter).length;
+  if (Math.abs(topBatA - topBatB) > 1) {
+    return false;
+  }
+
+  const spinA = candidateA.filter(isSpinBowler).length;
+  const spinB = candidateB.filter(isSpinBowler).length;
+  if (Math.abs(spinA - spinB) > 1) {
+    return false;
+  }
+
+  const paceA = candidateA.filter(isPaceBowler).length;
+  const paceB = candidateB.filter(isPaceBowler).length;
+  if (Math.abs(paceA - paceB) > 1) {
+    return false;
+  }
+
   // 1. Srinivas & Shiva: 4 times opposite in 4/6 matches
   const srinivasInA = candidateA.some(isSrinivas);
   const srinivasInB = candidateB.some(isSrinivas);
@@ -580,6 +662,18 @@ function isSplitValid(
       if (anurupamInA || anurupamInB) {
         const isSame = (anurupamInA && vasuInA) || (anurupamInB && vasuInB);
         if (isSame !== targets.anurupamTargetSame) {
+          return false;
+        }
+      }
+    }
+
+    // Ashok with Vasu 2 out of 5 times (3 out of 5 opposite)
+    if (targets.ashokVasuSame !== null) {
+      const ashokInA = candidateA.some(isAshok);
+      const ashokInB = candidateB.some(isAshok);
+      if (ashokInA || ashokInB) {
+        const isSame = (ashokInA && vasuInA) || (ashokInB && vasuInB);
+        if (isSame !== targets.ashokVasuSame) {
           return false;
         }
       }

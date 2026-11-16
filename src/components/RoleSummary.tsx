@@ -42,6 +42,22 @@ export const RoleSummary: React.FC<RoleSummaryProps> = ({
           <div className="text-right text-gold-400 line-clamp-1">{teamB.name}</div>
         </div>
 
+        {((teamA.roleSummary.strikeBowlerCount || 0) > 0 || (teamB.roleSummary.strikeBowlerCount || 0) > 0) && (
+          <div className="grid grid-cols-3 items-center text-center py-1 border-b border-stadium-800/50">
+            <div className="text-left font-mono font-bold text-rose-400">⚡ {teamA.roleSummary.strikeBowlerCount || 0} Strike</div>
+            <div className="text-stadium-400 font-medium text-[11px]">Strike Bowlers</div>
+            <div className="text-right font-mono font-bold text-rose-400">⚡ {teamB.roleSummary.strikeBowlerCount || 0} Strike</div>
+          </div>
+        )}
+
+        {((teamA.roleSummary.topBatterCount || 0) > 0 || (teamB.roleSummary.topBatterCount || 0) > 0) && (
+          <div className="grid grid-cols-3 items-center text-center py-1 border-b border-stadium-800/50">
+            <div className="text-left font-mono font-bold text-amber-400">🏏 {teamA.roleSummary.topBatterCount || 0} Top</div>
+            <div className="text-stadium-400 font-medium text-[11px]">Top Batters</div>
+            <div className="text-right font-mono font-bold text-amber-400">🏏 {teamB.roleSummary.topBatterCount || 0} Top</div>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 items-center text-center py-1 border-b border-stadium-800/50">
           <div className="text-left font-mono font-bold text-white">{teamA.roleSummary.paceCount} Bowlers</div>
           <div className="text-stadium-400 font-medium">Pace</div>

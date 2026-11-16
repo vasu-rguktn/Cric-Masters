@@ -512,7 +512,7 @@ export async function syncMatchToSupabase(match: MatchSession): Promise<boolean>
   if (broadcastChannel) {
     try {
       broadcastChannel.postMessage({ type: 'MATCH_UPDATED', match });
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
@@ -643,7 +643,7 @@ export function subscribeToMatchUpdates(
         if (match && match.date === date) {
           onMatchReceived(match);
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
     }

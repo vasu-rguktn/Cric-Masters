@@ -5,25 +5,29 @@ export const INITIAL_PLAYERS: Player[] = [
   {
     id: 'p-vasu',
     name: 'Vasu',
-    roles: ['All-rounder', 'Pace Bowler'],
+    roles: ['All-rounder', 'Pace Bowler', 'Strike Bowler'],
     isRegular: true,
     isActive: true,
+    isStrikeBowler: true,
     createdAt: new Date().toISOString(),
   },
   {
     id: 'p-reddy',
     name: 'Reddy Sir',
-    roles: ['All-rounder', 'Pace Bowler'],
+    roles: ['All-rounder', 'Pace Bowler', 'Strike Bowler'],
     isRegular: true,
     isActive: true,
+    isStrikeBowler: true,
     createdAt: new Date().toISOString(),
   },
   {
     id: 'p-srinivas',
     name: 'Srinivas Sir',
-    roles: ['All-rounder', 'Pace Bowler'],
+    roles: ['All-rounder', 'Pace Bowler', 'Power Batter', 'Strike Bowler'],
     isRegular: true,
     isActive: true,
+    isStrikeBowler: true,
+    isTopBatter: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -45,9 +49,11 @@ export const INITIAL_PLAYERS: Player[] = [
   {
     id: 'p-rk',
     name: 'RK Sir',
-    roles: ['Pace Bowler', 'Batsman'],
+    roles: ['Pace Bowler', 'Batsman', 'Power Batter', 'Strike Bowler'],
     isRegular: true,
     isActive: true,
+    isStrikeBowler: true,
+    isTopBatter: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -61,9 +67,10 @@ export const INITIAL_PLAYERS: Player[] = [
   {
     id: 'p-vinod',
     name: 'Vinod Sir',
-    roles: ['Batsman', 'Spinner'],
+    roles: ['Batsman', 'Power Batter', 'Spinner'],
     isRegular: true,
     isActive: true,
+    isTopBatter: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -85,9 +92,10 @@ export const INITIAL_PLAYERS: Player[] = [
   {
     id: 'p-ml-rao',
     name: 'M.L. Rao Sir',
-    roles: ['Batsman'],
+    roles: ['Batsman', 'Power Batter'],
     isRegular: true,
     isActive: true,
+    isTopBatter: true,
     createdAt: new Date().toISOString(),
   },
 
@@ -111,9 +119,10 @@ export const INITIAL_PLAYERS: Player[] = [
   {
     id: 'p-rajarao',
     name: 'Rajarao Sir',
-    roles: ['Batsman'],
+    roles: ['Batsman', 'Power Batter'],
     isRegular: false,
     isActive: true,
+    isTopBatter: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -127,9 +136,10 @@ export const INITIAL_PLAYERS: Player[] = [
   {
     id: 'p-anurupam',
     name: 'Anurupam Sir',
-    roles: ['Pace Bowler', 'Medium Pacer', 'Batsman'],
+    roles: ['Pace Bowler', 'Medium Pacer', 'Batsman', 'Strike Bowler'],
     isRegular: false,
     isActive: true,
+    isStrikeBowler: true,
     createdAt: new Date().toISOString(),
   },
   {

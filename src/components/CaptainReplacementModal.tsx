@@ -16,10 +16,16 @@ export const CaptainReplacementModal: React.FC<CaptainReplacementModalProps> = (
   onClose,
   onSelectNewCaptain,
 }) => {
-  if (!isOpen) return null;
+  const candidates = React.useMemo(() => getCaptainReplacementCandidates(team), [team]);
+  const [selectedId, setSelectedId] = useState<string>('');
 
-  const candidates = getCaptainReplacementCandidates(team);
-  const [selectedId, setSelectedId] = useState<string>(candidates[0]?.id || '');
+  React.useEffect(() => {
+    if (isOpen) {
+      setSelectedId(candidates[0]?.id || '');
+    }
+  }, [isOpen, candidates]);
+
+  if (!isOpen) return null;
 
   const handleConfirm = () => {
     if (selectedId) {

@@ -5,4 +5,5 @@ export interface AppSettings {
   enableSupabase: boolean;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
+  shareLinkFormat?: 'short' | 'none' | 'full'; // Default 'short'
 }
