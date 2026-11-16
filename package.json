@@ -17,7 +17,6 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@oxlint/binding-win32-x64-msvc": "^1.75.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^24.13.3",
